@@ -15,7 +15,7 @@ jobs:
       - name: Install analyzer and Pester
         shell: pwsh
         run: |
-          Set-PSResourceRepository PSGallery -Trusted -ErrorAction SilentlyContinue
+          # -Force bypasses the untrusted-gallery prompt; no need to pre-trust the repo.
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
           Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
 
