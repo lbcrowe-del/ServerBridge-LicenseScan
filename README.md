@@ -66,6 +66,8 @@ the box. Edit the price table near the top of the script to match your actual co
 - **Nothing leaves your machine.** No telemetry, no upload. The only output is the CSV you asked for.
 - **Inspect it.** It's a single, readable script — read it before you run it.
 
+See [PRIVACY.md](PRIVACY.md) for the full data-handling statement.
+
 ## Verifying the signature
 
 Official releases are **Authenticode-signed** by Lee Crowe Software Solutions LLC via Azure
