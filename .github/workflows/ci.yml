@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install analyzer and Pester
+        shell: pwsh
+        run: |
+          Set-PSResourceRepository PSGallery -Trusted -ErrorAction SilentlyContinue
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $issues = Invoke-ScriptAnalyzer -Path ./Invoke-LicenseScan.ps1 -Settings ./PSScriptAnalyzerSettings.psd1
+          if ($issues) {
+            $issues | Format-Table RuleName,Severity,Line,Message -Auto | Out-String | Write-Host
+            throw "PSScriptAnalyzer found $($issues.Count) issue(s)."
+          }
+          Write-Host "PSScriptAnalyzer: clean"
+
+      - name: Pester
+        shell: pwsh
+        run: |
+          $cfg = New-PesterConfiguration
+          $cfg.Run.Path = './tests'
+          $cfg.Run.Exit = $true
+          $cfg.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $cfg

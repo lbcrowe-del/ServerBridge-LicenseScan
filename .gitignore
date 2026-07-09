@@ -1,0 +1,12 @@
+# Scan output
+license-scan_*.csv
+*.csv
+# Signing material - never commit
+*.pfx
+*.p12
+*.snk
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/

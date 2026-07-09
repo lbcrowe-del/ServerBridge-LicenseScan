@@ -1,0 +1,62 @@
+name: Sign & attach release
+
+# Authenticode-signs Invoke-LicenseScan.ps1 and uploads the signed copy as a
+# release asset. Runs when you publish a GitHub Release (or manually).
+#
+# Requires two repository secrets (add them before cutting the first release):
+#   CODESIGN_PFX_BASE64    - base64 of your code-signing .pfx
+#                            ( [Convert]::ToBase64String([IO.File]::ReadAllBytes('cert.pfx')) )
+#   CODESIGN_PFX_PASSWORD  - the .pfx password
+# Without them the job exits cleanly with a notice (so forks/CI don't fail).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for signing secrets
+        id: guard
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PFX)) {
+            Write-Host "::notice::CODESIGN_PFX_BASE64 not set - skipping signing."
+            "signing=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "signing=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+        env:
+          PFX: ${{ secrets.CODESIGN_PFX_BASE64 }}
+
+      - name: Sign script
+        if: steps.guard.outputs.signing == 'true'
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.CODESIGN_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX))
+          $pw = ConvertTo-SecureString $env:PFX_PASSWORD -AsPlainText -Force
+          $cert = Get-PfxCertificate -FilePath $pfxPath -Password $pw
+          $sig = Set-AuthenticodeSignature -FilePath ./Invoke-LicenseScan.ps1 `
+            -Certificate $cert -HashAlgorithm SHA256 `
+            -TimestampServer 'http://timestamp.digicert.com'
+          if ($sig.Status -ne 'Valid') { throw "Signing failed: $($sig.Status) $($sig.StatusMessage)" }
+          Remove-Item $pfxPath -Force
+          Write-Host "Signed. Status: $($sig.Status)"
+
+      - name: Upload signed script to the release
+        if: steps.guard.outputs.signing == 'true' && github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" ./Invoke-LicenseScan.ps1 --clobber
