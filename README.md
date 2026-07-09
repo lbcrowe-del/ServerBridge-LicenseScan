@@ -63,7 +63,9 @@ the box. Edit the price table near the top of the script to match your actual co
 
 ## Verifying the signature
 
-Official releases are **Authenticode-signed** by Lee Crowe Software Solutions LLC. Verify before running:
+Official releases are **Authenticode-signed** by Lee Crowe Software Solutions LLC via Azure
+Trusted Signing (the same publicly-trusted certificate profile used for the ServerBridge app).
+Verify before running:
 
 ```powershell
 Get-AuthenticodeSignature ./Invoke-LicenseScan.ps1 | Format-List Status, SignerCertificate
