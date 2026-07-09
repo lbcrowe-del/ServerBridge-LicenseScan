@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
     Free, read-only Microsoft 365 unused-license scan.
-    Cross-checks every assigned license against real sign-in activity and
-    reports the seats you're paying for but nobody is using.
+    Cross-checks every assigned license against real activity and reports the
+    seats you're paying for but nobody is using.
 
 .DESCRIPTION
     Community edition of the ServerBridge License Auditor. Connects to Microsoft
@@ -10,28 +10,33 @@
     register, no app, no secrets). It never writes, removes, or changes anything
     in your tenant, and it stores nothing.
 
+    Activity signal (chosen automatically):
+      * If the tenant has Microsoft Entra ID P1/P2, it uses directory
+        sign-in activity (signInActivity) - the cleanest signal.
+      * Otherwise it falls back to the Microsoft 365 usage reports
+        (getMicrosoft365ActiveUserDetail), which need no premium license.
+      * Disabled accounts that still hold paid licenses are always flagged -
+        that works on every tenant regardless of the above.
+
     Outputs:
       * A console summary of wasted spend by SKU
       * A CSV of every dormant licensed user (for your own follow-up)
 
     What it deliberately does NOT do (that's the paid ServerBridge audit):
-      * Formatted PDF report you can hand to a boss or client
-      * Per-SKU downgrade recommendations
-      * Scheduled re-audits and month-over-month drift tracking
-      * Service-level waste, guest/shared-license flags, multi-tenant roll-up
-      * Support
+      * Formatted PDF report, per-SKU downgrade recommendations, scheduled
+        re-audits and drift, service-level waste, multi-tenant roll-up, support.
     See https://server-bridge.com/license-auditor.html
 
 .PARAMETER InactiveDays
-    A licensed user with no interactive sign-in in this many days is counted
-    as dormant. Default 90. Range 1-3650.
+    A licensed user with no activity in this many days is counted as dormant.
+    Default 90. Range 1-3650. (The usage-report fallback resolves to the nearest
+    supported window: 30, 90 or 180 days.)
 
 .PARAMETER OutputCsv
     Path for the CSV export. Default: .\license-scan_<tenant>_<date>.csv
 
 .PARAMETER IncludeGuests
-    Include guest (external) users in the scan. Off by default - guests are
-    rarely the licensing waste you're looking for.
+    Include guest (external) users. Off by default.
 
 .PARAMETER PassThru
     Emit the dormant-seat objects to the pipeline in addition to the CSV.
@@ -46,10 +51,10 @@
     Requires the Microsoft Graph PowerShell SDK:
         Install-Module Microsoft.Graph -Scope CurrentUser
     Delegated scopes requested (all read-only):
-        User.Read.All, Organization.Read.All, AuditLog.Read.All
+        User.Read.All, Organization.Read.All, AuditLog.Read.All, Reports.Read.All
     You must be able to consent to these (Global Reader is sufficient).
-    Prices are public list-price ESTIMATES (USD/user/month) - adjust the
-    price table below to match your actual contract for exact figures.
+    Prices are public list-price ESTIMATES (USD/user/month) - adjust the price
+    table below to match your actual contract for exact figures.
 
     Project: https://github.com/lbcrowe-del/ServerBridge-LicenseScan
     License: MIT
@@ -67,7 +72,7 @@ param(
     [switch]$PassThru
 )
 
-$script:RequiredScopes = @('User.Read.All', 'Organization.Read.All', 'AuditLog.Read.All')
+$script:RequiredScopes = @('User.Read.All', 'Organization.Read.All', 'AuditLog.Read.All', 'Reports.Read.All')
 
 # --- Approximate public list prices, USD / user / month, keyed by SkuPartNumber.
 # --- ESTIMATES so the tool can put a dollar figure on waste out of the box.
@@ -109,34 +114,47 @@ function Get-SkuMonthlyPrice {
 }
 
 function Test-UserDormant {
-    <# Returns $true when a user has not signed in since $Cutoff (never-signed-in counts as dormant). #>
+    <# $true when a user has no activity since $Cutoff (never-active counts as dormant). #>
     [CmdletBinding()]
     param(
-        [Parameter()][Nullable[datetime]]$LastSignIn,
+        [Parameter()][Nullable[datetime]]$LastActivity,
         [Parameter(Mandatory)][datetime]$Cutoff
     )
-    if ($null -eq $LastSignIn) { return $true }
-    return ($LastSignIn -lt $Cutoff)
+    if ($null -eq $LastActivity) { return $true }
+    return ($LastActivity -lt $Cutoff)
 }
 
 function Get-DormantLicenseRow {
     <#
-    Pure projection: given users, a SkuId->PartNumber map and a cutoff, emit one
-    row per dormant user per priced license. No Graph, no I/O - unit-testable.
+    Pure projection: given normalized user objects (DisplayName, UserPrincipalName,
+    UserType, AccountEnabled, LastActivity, AssignedLicenses[].SkuId), a
+    SkuId->PartNumber map and a cutoff, emit one row per dormant user per priced
+    license. No Graph, no I/O - unit-testable.
+
+    A user is dormant when disabled, OR (when an activity signal is available) when
+    last activity is older than the cutoff or unknown. With no activity signal only
+    disabled accounts are flagged.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Users,
         [Parameter(Mandatory)][hashtable]$SkuMap,
         [Parameter(Mandatory)][datetime]$Cutoff,
+        [bool]$ActivitySignalAvailable = $true,
         [switch]$IncludeGuests
     )
 
     foreach ($u in $Users) {
         if (-not $IncludeGuests -and $u.UserType -eq 'Guest') { continue }
 
-        $last = $u.SignInActivity.LastSignInDateTime
-        if (-not (Test-UserDormant -LastSignIn $last -Cutoff $Cutoff)) { continue }
+        $dormant = $false
+        $reason = $null
+        if (-not $u.AccountEnabled) {
+            $dormant = $true; $reason = 'disabled'
+        } elseif ($ActivitySignalAvailable -and (Test-UserDormant -LastActivity $u.LastActivity -Cutoff $Cutoff)) {
+            $dormant = $true; $reason = 'inactive'
+        }
+        if (-not $dormant) { continue }
 
         foreach ($lic in $u.AssignedLicenses) {
             $part = $SkuMap[$lic.SkuId]
@@ -149,8 +167,9 @@ function Get-DormantLicenseRow {
                 UserPrincipalName = $u.UserPrincipalName
                 UserType          = $u.UserType
                 AccountEnabled    = $u.AccountEnabled
+                Reason            = $reason
                 Sku               = $part
-                LastSignIn        = if ($last) { ([datetime]$last).ToString('yyyy-MM-dd') } else { 'never' }
+                LastActivity      = if ($u.LastActivity) { ([datetime]$u.LastActivity).ToString('yyyy-MM-dd') } else { 'never/unknown' }
                 MonthlyCost       = $price
                 AnnualCost        = [math]::Round($price * 12, 2)
             }
@@ -159,9 +178,67 @@ function Get-DormantLicenseRow {
 }
 
 # ---------------------------------------------------------------------------
-# Main (Graph I/O). Kept in a function so tests can dot-source this file
-# without connecting to a tenant.
+# Graph I/O (kept in functions so tests can dot-source without a tenant)
 # ---------------------------------------------------------------------------
+
+function Get-SignInActivityMap {
+    <#
+    Returns @{ ok=$bool; map=@{ upn(lower) -> [datetime] } }. ok=$false when the
+    tenant lacks Entra ID P1 (signInActivity is premium-only) so the caller can
+    fall back. Other errors are rethrown.
+    #>
+    [CmdletBinding()] param()
+    $map = @{}
+    try {
+        $users = Get-MgUser -All -Property 'userPrincipalName,signInActivity' `
+            -Filter 'assignedLicenses/$count ne 0' -ConsistencyLevel eventual `
+            -CountVariable siaCount -ErrorAction Stop
+        foreach ($u in $users) {
+            if ($u.UserPrincipalName) { $map[$u.UserPrincipalName.ToLower()] = $u.SignInActivity.LastSignInDateTime }
+        }
+        return @{ ok = $true; map = $map }
+    } catch {
+        $msg = "$($_.Exception.Message)"
+        if ($msg -match 'NonPremium' -or $msg -match 'premium') { return @{ ok = $false; map = $map } }
+        throw
+    }
+}
+
+function Get-UsageReportActivityMap {
+    <#
+    Fallback that needs no Entra premium: pulls the Microsoft 365 active-user
+    detail report and returns @{ ok=$bool; map=@{ upn(lower) -> [datetime] } }.
+    ok=$false when the tenant de-identifies report data (UPNs masked) so activity
+    can't be matched to users.
+    #>
+    [CmdletBinding()] param([int]$InactiveDays = 90)
+
+    # NB: the Graph reports API keeps the legacy "Office365" name for this function.
+    $period = if ($InactiveDays -le 30) { 'D30' } elseif ($InactiveDays -le 90) { 'D90' } else { 'D180' }
+    $uri = "https://graph.microsoft.com/v1.0/reports/getOffice365ActiveUserDetail(period='$period')"
+    $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType HttpResponseMessage -ErrorAction Stop
+    $csv = $resp.Content.ReadAsStringAsync().Result
+    $rows = @($csv | ConvertFrom-Csv)
+
+    $map = @{}
+    $sawUpn = $false
+    foreach ($r in $rows) {
+        $upn = $r.'User Principal Name'
+        if (-not $upn) { continue }
+        if ($upn -like '*@*') { $sawUpn = $true }
+        # Take the most recent activity across every per-service "* Last Activity Date" column.
+        $maxDate = $null
+        foreach ($p in $r.PSObject.Properties) {
+            if ($p.Name -like '*Last Activity Date' -and $p.Value) {
+                $d = $p.Value -as [datetime]
+                if ($d -and ($null -eq $maxDate -or $d -gt $maxDate)) { $maxDate = $d }
+            }
+        }
+        $map[$upn.ToLower()] = $maxDate
+    }
+    if (-not $sawUpn -and $rows.Count -gt 0) { return @{ ok = $false; map = @{} } }
+    return @{ ok = $true; map = $map }
+}
 
 function Invoke-LicenseScanMain {
     [CmdletBinding()]
@@ -189,46 +266,81 @@ function Invoke-LicenseScanMain {
         Write-Host "Sign-in failed: $($_.Exception.Message)" -ForegroundColor Red
         return
     }
-
-    $ctx = Get-MgContext
-    if (-not $ctx) { Write-Host 'Sign-in cancelled.' -ForegroundColor Red; return }
+    if (-not (Get-MgContext)) { Write-Host 'Sign-in cancelled.' -ForegroundColor Red; return }
 
     try {
         $org = Get-MgOrganization -ErrorAction Stop
         $tenantName = ($org.DisplayName | Select-Object -First 1)
         Write-Host "Connected to: $tenantName" -ForegroundColor Green
 
-        $guestNote = if ($IncludeGuests) { ' (including guests)' } else { '' }
-        Write-Host "Flagging licensed users with no sign-in in $InactiveDays+ days$guestNote..." -ForegroundColor Cyan
-
-        # SKU GUID -> part number
         $skuMap = @{}
-        foreach ($s in (Get-MgSubscribedSku -All -ErrorAction Stop)) {
-            $skuMap[$s.SkuId] = $s.SkuPartNumber
-        }
+        foreach ($s in (Get-MgSubscribedSku -All -ErrorAction Stop)) { $skuMap[$s.SkuId] = $s.SkuPartNumber }
 
-        # Licensed users with last sign-in. The SDK retries throttled (429) calls automatically.
-        $select = 'id,displayName,userPrincipalName,userType,accountEnabled,assignedLicenses,signInActivity'
-        $users = Get-MgUser -All -Property $select `
-            -Filter 'assignedLicenses/$count ne 0' `
-            -ConsistencyLevel eventual -CountVariable null -ErrorAction Stop
+        $select = 'id,displayName,userPrincipalName,userType,accountEnabled,assignedLicenses'
+        $rawUsers = Get-MgUser -All -Property $select -Filter 'assignedLicenses/$count ne 0' `
+            -ConsistencyLevel eventual -CountVariable userCount -ErrorAction Stop
     } catch {
         Write-Host "Graph read failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host 'Confirm you consented to User.Read.All, Organization.Read.All and AuditLog.Read.All.' -ForegroundColor Yellow
+        Write-Host 'Confirm you consented to User.Read.All, Organization.Read.All, AuditLog.Read.All and Reports.Read.All.' -ForegroundColor Yellow
         Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
         return
     }
 
+    # Resolve an activity signal: prefer sign-in activity (premium), fall back to usage reports.
+    $activity = @{}
+    $signalAvailable = $true
+    $signalName = 'directory sign-in activity'
+    $sia = Get-SignInActivityMap
+    if ($sia.ok) {
+        $activity = $sia.map
+    } else {
+        Write-Host 'Sign-in activity needs Entra ID P1; falling back to Microsoft 365 usage reports...' -ForegroundColor Yellow
+        try {
+            $rep = Get-UsageReportActivityMap -InactiveDays $InactiveDays
+            if ($rep.ok) {
+                $activity = $rep.map
+                $signalName = 'Microsoft 365 usage reports'
+            } else {
+                $signalAvailable = $false
+                Write-Host 'Usage reports are de-identified in this tenant - only disabled-but-licensed accounts can be flagged.' -ForegroundColor Yellow
+                Write-Host '(Admin center > Settings > Org settings > Reports > uncheck "Display concealed names" to enable full detection.)' -ForegroundColor DarkGray
+            }
+        } catch {
+            $signalAvailable = $false
+            Write-Host "Usage reports unavailable: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host 'Only disabled-but-licensed accounts can be flagged.' -ForegroundColor Yellow
+        }
+    }
+
+    if ($signalAvailable) {
+        Write-Host "Flagging licensed users dormant $InactiveDays+ days (via $signalName)..." -ForegroundColor Cyan
+    }
+
+    $normalized = foreach ($u in $rawUsers) {
+        [pscustomobject]@{
+            DisplayName       = $u.DisplayName
+            UserPrincipalName = $u.UserPrincipalName
+            UserType          = $u.UserType
+            AccountEnabled    = $u.AccountEnabled
+            AssignedLicenses  = $u.AssignedLicenses
+            LastActivity      = if ($u.UserPrincipalName) { $activity[$u.UserPrincipalName.ToLower()] } else { $null }
+        }
+    }
+
+    if ($signalAvailable) {
+        $resolved = @($normalized | Where-Object { $_.LastActivity }).Count
+        Write-Host ("  activity resolved for {0} of {1} licensed users" -f $resolved, @($normalized).Count) -ForegroundColor DarkGray
+    }
+
     $cutoff = (Get-Date).AddDays(-1 * $InactiveDays)
-    $dormant = @(Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -IncludeGuests:$IncludeGuests)
+    $dormant = @(Get-DormantLicenseRow -Users $normalized -SkuMap $skuMap -Cutoff $cutoff `
+            -ActivitySignalAvailable $signalAvailable -IncludeGuests:$IncludeGuests)
 
-    # Summarise
     Write-Host ''
-    Write-Host "Wasted spend by license (dormant $InactiveDays+ days)" -ForegroundColor Green
-    Write-Host '-----------------------------------------------------' -ForegroundColor DarkGray
-
+    Write-Host 'Wasted spend by license' -ForegroundColor Green
+    Write-Host '-----------------------' -ForegroundColor DarkGray
     if ($dormant.Count -eq 0) {
-        Write-Host '  No dormant licensed users found. Nothing obvious to reclaim.' -ForegroundColor Green
+        Write-Host '  Nothing obvious to reclaim.' -ForegroundColor Green
     } else {
         $dormant | Group-Object Sku | ForEach-Object {
             [pscustomobject]@{
@@ -239,34 +351,28 @@ function Invoke-LicenseScanMain {
         } | Sort-Object 'Annual $' -Descending | Format-Table -AutoSize
     }
 
-    $totalSeats = $dormant.Count
     $totalAnnual = [math]::Round((($dormant | Measure-Object AnnualCost -Sum).Sum), 0)
-    Write-Host ''
-    Write-Host ("  Reclaimable seats : {0:N0}" -f $totalSeats) -ForegroundColor White
+    Write-Host ("  Reclaimable seats : {0:N0}" -f $dormant.Count) -ForegroundColor White
     Write-Host ("  Wasted spend      : `${0:N0} / year" -f $totalAnnual) -ForegroundColor Green
     Write-Host ''
 
-    # Export CSV
     if (-not $OutputCsv) {
         $safeTenant = ($tenantName -replace '[^\w]', '')
         $OutputCsv = Join-Path (Get-Location) ("license-scan_{0}_{1}.csv" -f $safeTenant, (Get-Date -Format 'yyyyMMdd'))
     }
     if ($dormant.Count -gt 0) {
-        $dormant | Sort-Object AnnualCost -Descending |
-            Export-Csv -Path $OutputCsv -NoTypeInformation -Encoding UTF8
-        Write-Host 'Full per-user list saved to:' -ForegroundColor Cyan
+        $dormant | Sort-Object AnnualCost -Descending | Export-Csv -Path $OutputCsv -NoTypeInformation -Encoding UTF8
+        Write-Host "Full per-user list saved to:" -ForegroundColor Cyan
         Write-Host "  $OutputCsv" -ForegroundColor White
         Write-Host ''
     }
 
     Write-Host 'Prices are list-price estimates - edit the price table for exact figures.' -ForegroundColor DarkGray
     Write-Host 'Want the PDF report, downgrade recommendations and scheduled re-audits?' -ForegroundColor DarkGray
-    Write-Host 'That is the paid ServerBridge License Auditor:' -ForegroundColor DarkGray
     Write-Host '  https://server-bridge.com/license-auditor.html' -ForegroundColor Cyan
     Write-Host ''
 
     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
-
     if ($PassThru) { $dormant }
 }
 

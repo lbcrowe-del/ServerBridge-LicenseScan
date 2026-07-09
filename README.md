@@ -36,8 +36,13 @@ POWER_BI_PRO                  6        720
   ```powershell
   Install-Module Microsoft.Graph -Scope CurrentUser
   ```
-- Permission to consent to three **read-only** delegated scopes:
-  `User.Read.All`, `Organization.Read.All`, `AuditLog.Read.All` (Global Reader is enough).
+- Permission to consent to four **read-only** delegated scopes:
+  `User.Read.All`, `Organization.Read.All`, `AuditLog.Read.All`, `Reports.Read.All`
+  (Global Reader is enough).
+
+> **No Entra ID P1?** No problem. Sign-in activity needs Entra ID P1, so on tenants
+> without it the scan automatically falls back to the Microsoft 365 usage reports for
+> last-activity data, and always flags disabled-but-licensed accounts.
 
 ## Quick start
 

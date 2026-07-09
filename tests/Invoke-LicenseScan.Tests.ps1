@@ -23,14 +23,14 @@ Describe 'Get-SkuMonthlyPrice' {
 Describe 'Test-UserDormant' {
     BeforeAll { $cutoff = (Get-Date).AddDays(-90) }
 
-    It 'treats a never-signed-in user (null) as dormant' {
-        Test-UserDormant -LastSignIn $null -Cutoff $cutoff | Should -BeTrue
+    It 'treats a never-active user (null) as dormant' {
+        Test-UserDormant -LastActivity $null -Cutoff $cutoff | Should -BeTrue
     }
-    It 'treats an old sign-in as dormant' {
-        Test-UserDormant -LastSignIn (Get-Date).AddDays(-120) -Cutoff $cutoff | Should -BeTrue
+    It 'treats old activity as dormant' {
+        Test-UserDormant -LastActivity (Get-Date).AddDays(-120) -Cutoff $cutoff | Should -BeTrue
     }
-    It 'treats a recent sign-in as active' {
-        Test-UserDormant -LastSignIn (Get-Date).AddDays(-10) -Cutoff $cutoff | Should -BeFalse
+    It 'treats recent activity as active' {
+        Test-UserDormant -LastActivity (Get-Date).AddDays(-10) -Cutoff $cutoff | Should -BeFalse
     }
 }
 
@@ -43,41 +43,62 @@ Describe 'Get-DormantLicenseRow' {
         $cutoff = (Get-Date).AddDays(-90)
 
         function New-TestUser {
-            param($Name, $Type, $Enabled, $Last, $Skus)
+            param($Name, $Type = 'Member', $Enabled = $true, $Last = $null, $Skus = @('sku-e3'))
             [pscustomobject]@{
                 DisplayName       = $Name
                 UserPrincipalName = "$Name@contoso.com"
                 UserType          = $Type
                 AccountEnabled    = $Enabled
-                SignInActivity    = [pscustomobject]@{ LastSignInDateTime = $Last }
+                LastActivity      = $Last
                 AssignedLicenses  = @($Skus | ForEach-Object { [pscustomobject]@{ SkuId = $_ } })
             }
         }
     }
 
     It 'emits a row for a dormant member with a priced license' {
-        $users = @(New-TestUser 'dana' 'Member' $true $null @('sku-e3'))
+        $users = @(New-TestUser -Name 'dana' -Last $null)
         $rows = @(Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff)
         $rows.Count | Should -Be 1
         $rows[0].Sku | Should -Be 'ENTERPRISEPACK'
         $rows[0].AnnualCost | Should -Be 432.00
-        $rows[0].LastSignIn | Should -Be 'never'
+        $rows[0].Reason | Should -Be 'inactive'
+        $rows[0].LastActivity | Should -Be 'never/unknown'
     }
 
     It 'skips active users' {
-        $users = @(New-TestUser 'active' 'Member' $true (Get-Date).AddDays(-5) @('sku-e3'))
+        $users = @(New-TestUser -Name 'active' -Last (Get-Date).AddDays(-5))
         (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
     }
 
+    It 'flags a disabled account even if recently active' {
+        $users = @(New-TestUser -Name 'exemp' -Enabled $false -Last (Get-Date).AddDays(-1))
+        $rows = @(Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff)
+        $rows.Count | Should -Be 1
+        $rows[0].Reason | Should -Be 'disabled'
+    }
+
     It 'skips free SKUs even when the user is dormant' {
-        $users = @(New-TestUser 'freeonly' 'Member' $true $null @('sku-free'))
+        $users = @(New-TestUser -Name 'freeonly' -Last $null -Skus @('sku-free'))
         (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
     }
 
     It 'excludes guests by default but includes them with -IncludeGuests' {
-        $users = @(New-TestUser 'guest' 'Guest' $true $null @('sku-e3'))
+        $users = @(New-TestUser -Name 'guest' -Type 'Guest' -Last $null)
         (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
         (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -IncludeGuests).Count | Should -Be 1
+    }
+
+    Context 'when no activity signal is available' {
+        It 'flags only disabled accounts, not inactive enabled ones' {
+            $users = @(
+                New-TestUser -Name 'enabled-noactivity' -Last $null
+                New-TestUser -Name 'disabled' -Enabled $false -Last $null
+            )
+            $rows = @(Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -ActivitySignalAvailable $false)
+            $rows.Count | Should -Be 1
+            $rows[0].UserPrincipalName | Should -Be 'disabled@contoso.com'
+            $rows[0].Reason | Should -Be 'disabled'
+        }
     }
 
     It 'handles an empty user set without error' {
