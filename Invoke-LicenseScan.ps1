@@ -14,7 +14,7 @@
       * If the tenant has Microsoft Entra ID P1/P2, it uses directory
         sign-in activity (signInActivity) - the cleanest signal.
       * Otherwise it falls back to the Microsoft 365 usage reports
-        (getMicrosoft365ActiveUserDetail), which need no premium license.
+        (getOffice365ActiveUserDetail), which need no premium license.
       * Disabled accounts that still hold paid licenses are always flagged -
         that works on every tenant regardless of the above.
 
@@ -22,9 +22,9 @@
       * A console summary of wasted spend by SKU
       * A CSV of every dormant licensed user (for your own follow-up)
 
-    What it deliberately does NOT do (that's the paid ServerBridge audit):
-      * Formatted PDF report, per-SKU downgrade recommendations, scheduled
-        re-audits and drift, service-level waste, multi-tenant roll-up, support.
+    What it deliberately does NOT do (that's the paid ServerBridge License Auditor):
+      * A formatted PDF report, costed recommended actions, scheduled re-audits
+        with drift tracking, multi-tenant roll-up, and support.
     See https://server-bridge.com/license-auditor.html
 
 .PARAMETER InactiveDays
@@ -416,7 +416,7 @@ function Invoke-LicenseScanMain {
     }
 
     Write-Host 'Prices are list-price estimates - edit the price table for exact figures.' -ForegroundColor DarkGray
-    Write-Host 'Want the PDF report, downgrade recommendations and scheduled re-audits?' -ForegroundColor DarkGray
+    Write-Host 'Want the PDF report, costed recommended actions and scheduled re-audits?' -ForegroundColor DarkGray
     Write-Host '  https://server-bridge.com/license-auditor.html' -ForegroundColor Cyan
     Write-Host ''
 

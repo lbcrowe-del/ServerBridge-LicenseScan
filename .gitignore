@@ -10,3 +10,6 @@ license-scan_*.csv
 Thumbs.db
 *.swp
 .vscode/
+
+# Staged module build output
+out/

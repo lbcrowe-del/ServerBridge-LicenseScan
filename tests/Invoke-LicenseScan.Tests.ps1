@@ -2,7 +2,7 @@
 
 BeforeAll {
     # Dot-source the script; InvocationName '.' prevents Invoke-LicenseScanMain from running.
-    . (Join-Path $PSScriptRoot '..' 'Invoke-LicenseScan.ps1')
+    . (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
 }
 
 Describe 'Get-SkuMonthlyPrice' {
@@ -144,8 +144,17 @@ Describe 'ConvertTo-SafeCsvValue' {
 
 Describe 'Sign-in hygiene' {
     It 'keeps the Microsoft sign-in in memory only (process scope)' {
-        $src = Get-Content -Raw (Join-Path $PSScriptRoot '..' 'Invoke-LicenseScan.ps1')
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
         $src | Should -Match 'Connect-MgGraph[^\r\n]*-ContextScope Process'
+    }
+}
+
+Describe 'Upsell text' {
+    It 'never advertises paid features that are not built' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
+        $src | Should -Not -Match '(?i)downgrade'
+        $src | Should -Not -Match '(?i)service-level waste'
+        $src | Should -Not -Match '(?i)guest/shared'
     }
 }
 

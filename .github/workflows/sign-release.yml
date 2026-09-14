@@ -1,22 +1,26 @@
-name: Sign & attach release
+name: Sign, attach & publish release
 
-# Authenticode-signs Invoke-LicenseScan.ps1 with Azure Trusted Signing and
-# uploads the signed copy as a release asset. Runs when you publish a GitHub
-# Release (or manually to test the pipeline).
+# On a published GitHub Release:
+#   1. Builds the ServerBridge.LicenseScan module (build/Build-Module.ps1).
+#   2. Authenticode-signs the standalone script and every module file with Azure Trusted Signing.
+#   3. Publishes the signed module to the PowerShell Gallery (when PSGALLERY_API_KEY is set).
+#   4. Attaches the signed script and a zip of the signed module to the release.
+# workflow_dispatch runs steps 1-2 only (a safe dry run of build + signing).
 #
-# Reuses the same secretless setup as the ServerBridge desktop app: auth is via
-# OIDC federation (no stored secrets), and signing goes through the shared
-# `serverbridge-signing` Trusted Signing account / `serverbridge-publictrust`
-# certificate profile.
+# Signing reuses the same secretless setup as the ServerBridge desktop app: auth is via OIDC
+# federation (no stored secrets), through the shared `serverbridge-signing` Trusted Signing
+# account / `serverbridge-publictrust` certificate profile.
 #
 # Prerequisites (one-time):
-#   * A `release-signing` GitHub Environment on this repo carrying the non-secret
-#     vars: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
-#     AZURE_TRUSTED_SIGNING_ENDPOINT, AZURE_TRUSTED_SIGNING_ACCOUNT,
-#     AZURE_TRUSTED_SIGNING_CERT_PROFILE.
-#   * A federated credential on the signing app (AZURE_CLIENT_ID) for this repo's
-#     subject:  repo:lbcrowe-del/ServerBridge-LicenseScan:environment:release-signing
-#     (the app already holds the Trusted Signing Certificate Profile Signer role).
+#   * A `release-signing` GitHub Environment on this repo carrying the non-secret vars:
+#     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_TRUSTED_SIGNING_ENDPOINT,
+#     AZURE_TRUSTED_SIGNING_ACCOUNT, AZURE_TRUSTED_SIGNING_CERT_PROFILE.
+#   * A federated credential on the signing app for this repo's subject:
+#       repo:lbcrowe-del/ServerBridge-LicenseScan:environment:release-signing
+#   * The PowerShell Gallery API key as secret PSGALLERY_API_KEY on the `release-signing`
+#     environment (scope the key to "Push new packages and package versions" for
+#     ServerBridge.LicenseScan only).
+#   * The release tag must match ModuleVersion in the manifest (v1.1.0 <-> 1.1.0).
 
 on:
   release:
@@ -25,14 +29,33 @@ on:
 
 permissions:
   id-token: write   # OIDC federation to Azure
-  contents: write   # upload the signed asset to the release
+  contents: write   # upload the signed assets to the release
 
 jobs:
-  sign:
+  sign-and-publish:
     runs-on: windows-latest
     environment: release-signing
+    env:
+      PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the release tag matches the module version
+        if: github.event_name == 'release'
+        shell: pwsh
+        run: |
+          $version = (Import-PowerShellDataFile ./ServerBridge.LicenseScan/ServerBridge.LicenseScan.psd1).ModuleVersion
+          $tag = '${{ github.event.release.tag_name }}'.TrimStart('v')
+          if ($tag -ne $version) { throw "Release tag '$tag' doesn't match ModuleVersion '$version'. Fix one and re-release." }
+          Write-Host "Tag and ModuleVersion agree: $version"
+
+      - name: Install the Graph modules the manifest requires
+        shell: pwsh
+        run: Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement -Scope CurrentUser -Force
+
+      - name: Build module
+        shell: pwsh
+        run: ./build/Build-Module.ps1
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -49,28 +72,55 @@ jobs:
       - name: Install sign tool
         run: dotnet tool install --global --prerelease sign
 
-      - name: Sign script (Azure Trusted Signing)
-        run: >
-          sign code artifact-signing
-          --artifact-signing-endpoint ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
-          --artifact-signing-account ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
-          --artifact-signing-certificate-profile ${{ vars.AZURE_TRUSTED_SIGNING_CERT_PROFILE }}
-          --azure-credential-type azure-cli
-          --file-digest sha256
-          --timestamp-url http://timestamp.acs.microsoft.com
-          Invoke-LicenseScan.ps1
-
-      - name: Verify signature
+      - name: Sign script and module files (Azure Trusted Signing)
         shell: pwsh
         run: |
-          $sig = Get-AuthenticodeSignature ./Invoke-LicenseScan.ps1
-          $sig | Format-List Status, StatusMessage, SignerCertificate
-          if ($sig.Status -ne 'Valid') { throw "Signature not Valid: $($sig.Status) - $($sig.StatusMessage)" }
-          Write-Host "Signature is Valid."
+          $files = @(
+            './Invoke-LicenseScan.ps1'
+            './out/ServerBridge.LicenseScan/ServerBridge.LicenseScan.psd1'
+            './out/ServerBridge.LicenseScan/ServerBridge.LicenseScan.psm1'
+            './out/ServerBridge.LicenseScan/Invoke-LicenseScan.ps1'
+          )
+          foreach ($file in $files) {
+            sign code artifact-signing `
+              --artifact-signing-endpoint '${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}' `
+              --artifact-signing-account '${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}' `
+              --artifact-signing-certificate-profile '${{ vars.AZURE_TRUSTED_SIGNING_CERT_PROFILE }}' `
+              --azure-credential-type azure-cli `
+              --file-digest sha256 `
+              --timestamp-url http://timestamp.acs.microsoft.com `
+              $file
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file" }
+          }
 
-      - name: Upload signed script to the release
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          $files = @('./Invoke-LicenseScan.ps1') + (Get-ChildItem ./out/ServerBridge.LicenseScan -Include *.ps1, *.psm1, *.psd1 -Recurse | ForEach-Object FullName)
+          foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature $file
+            Write-Host "$file : $($sig.Status) ($($sig.SignerCertificate.Subject))"
+            if ($sig.Status -ne 'Valid') { throw "Signature not Valid for $file : $($sig.Status) - $($sig.StatusMessage)" }
+          }
+          Write-Host "All signatures are Valid."
+
+      - name: Publish to the PowerShell Gallery
+        if: github.event_name == 'release' && env.PSGALLERY_API_KEY != ''
+        shell: pwsh
+        run: |
+          Publish-PSResource -Path ./out/ServerBridge.LicenseScan -Repository PSGallery -ApiKey $env:PSGALLERY_API_KEY
+          Write-Host "Published. It can take a few minutes to appear at https://www.powershellgallery.com/packages/ServerBridge.LicenseScan"
+
+      - name: Warn when the Gallery key is missing
+        if: github.event_name == 'release' && env.PSGALLERY_API_KEY == ''
+        shell: pwsh
+        run: Write-Host "::warning::PSGALLERY_API_KEY is not set on the release-signing environment - skipped PowerShell Gallery publish."
+
+      - name: Upload signed script and module to the release
         if: github.event_name == 'release'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" ./Invoke-LicenseScan.ps1 --clobber
+        run: |
+          Compress-Archive -Path ./out/ServerBridge.LicenseScan -DestinationPath ./ServerBridge.LicenseScan.zip -Force
+          gh release upload "${{ github.event.release.tag_name }}" ./Invoke-LicenseScan.ps1 ./ServerBridge.LicenseScan.zip --clobber
