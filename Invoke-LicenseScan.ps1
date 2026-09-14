@@ -137,14 +137,14 @@ function Get-DormantLicenseRow {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Users,
+        [Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][object[]]$Users,
         [Parameter(Mandatory)][hashtable]$SkuMap,
         [Parameter(Mandatory)][datetime]$Cutoff,
         [bool]$ActivitySignalAvailable = $true,
         [switch]$IncludeGuests
     )
 
-    foreach ($u in $Users) {
+    foreach ($u in @($Users | Where-Object { $null -ne $_ })) {
         if (-not $IncludeGuests -and $u.UserType -eq 'Guest') { continue }
 
         $dormant = $false
@@ -240,6 +240,19 @@ function Get-UsageReportActivityMap {
     return @{ ok = $true; map = $map }
 }
 
+function Get-ConcealedNamesHelpText {
+    <# The one-minute fix for de-identified usage reports, as lines of text (testable). #>
+    [CmdletBinding()] param()
+    @(
+        'Microsoft is hiding user names in your usage reports, so this scan cannot tell who is inactive.'
+        'Fix it in about a minute (needs a Global Administrator):'
+        '  1. Open https://admin.microsoft.com'
+        '  2. Go to Settings > Org settings > Services > Reports'
+        '  3. Untick "Conceal user, group, and site names in all reports", then click Save'
+        'This only changes what admins see in Microsoft''s own reports. You can turn it back on after the audit.'
+    )
+}
+
 function Invoke-LicenseScanMain {
     [CmdletBinding()]
     param(
@@ -271,7 +284,7 @@ function Invoke-LicenseScanMain {
     try {
         $org = Get-MgOrganization -ErrorAction Stop
         $tenantName = ($org.DisplayName | Select-Object -First 1)
-        Write-Host "Connected to: $tenantName" -ForegroundColor Green
+        Write-Host "Connected to: $tenantName (signed in as $((Get-MgContext).Account))" -ForegroundColor Green
 
         $skuMap = @{}
         foreach ($s in (Get-MgSubscribedSku -All -ErrorAction Stop)) { $skuMap[$s.SkuId] = $s.SkuPartNumber }
@@ -295,20 +308,37 @@ function Invoke-LicenseScanMain {
         $activity = $sia.map
     } else {
         Write-Host 'Sign-in activity needs Entra ID P1; falling back to Microsoft 365 usage reports...' -ForegroundColor Yellow
-        try {
-            $rep = Get-UsageReportActivityMap -InactiveDays $InactiveDays
-            if ($rep.ok) {
-                $activity = $rep.map
-                $signalName = 'Microsoft 365 usage reports'
-            } else {
-                $signalAvailable = $false
-                Write-Host 'Usage reports are de-identified in this tenant - only disabled-but-licensed accounts can be flagged.' -ForegroundColor Yellow
-                Write-Host '(Admin center > Settings > Org settings > Reports > uncheck "Display concealed names" to enable full detection.)' -ForegroundColor DarkGray
+        $rep = $null
+        $attempt = 0
+        while ($true) {
+            try {
+                $rep = Get-UsageReportActivityMap -InactiveDays $InactiveDays
+            } catch {
+                $rep = $null
+                Write-Host "Usage reports unavailable: $($_.Exception.Message)" -ForegroundColor Yellow
+                break
             }
-        } catch {
+            if ($rep.ok) { break }
+
+            $attempt++
+            Write-Host ''
+            if ($attempt -gt 1) {
+                Write-Host 'Names are still hidden. Microsoft can take a few minutes to apply the change.' -ForegroundColor Yellow
+            } else {
+                Get-ConcealedNamesHelpText | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+            }
+            if ([Console]::IsInputRedirected) { break }
+            $answer = Read-Host 'Press Enter when done to check again (no new sign-in), or type S to skip'
+            if ($answer -match '^\s*[sS]') { break }
+        }
+
+        if ($rep -and $rep.ok) {
+            $activity = $rep.map
+            $signalName = 'Microsoft 365 usage reports'
+        } else {
             $signalAvailable = $false
-            Write-Host "Usage reports unavailable: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host 'Only disabled-but-licensed accounts can be flagged.' -ForegroundColor Yellow
+            Write-Host ''
+            Write-Host 'PARTIAL AUDIT: only disabled accounts that still hold licenses can be checked.' -ForegroundColor Yellow
         }
     }
 
@@ -346,7 +376,7 @@ function Invoke-LicenseScanMain {
             [pscustomobject]@{
                 License      = $_.Name
                 DormantSeats = $_.Count
-                'Annual $'   = [math]::Round((($_.Group | Measure-Object AnnualCost -Sum).Sum), 0)
+                'Annual $'   = [int][math]::Round((($_.Group | Measure-Object AnnualCost -Sum).Sum), 0)
             }
         } | Sort-Object 'Annual $' -Descending | Format-Table -AutoSize
     }

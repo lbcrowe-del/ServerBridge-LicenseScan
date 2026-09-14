@@ -101,7 +101,26 @@ Describe 'Get-DormantLicenseRow' {
         }
     }
 
+    It 'handles a null user set without error (tenant with 0 licensed users)' {
+        { Get-DormantLicenseRow -Users $null -SkuMap $skuMap -Cutoff $cutoff } | Should -Not -Throw
+        (Get-DormantLicenseRow -Users $null -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
+    }
+
     It 'handles an empty user set without error' {
         (Get-DormantLicenseRow -Users @() -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Get-ConcealedNamesHelpText' {
+    It "uses Microsoft's exact checkbox wording and the admin center address" {
+        $text = (Get-ConcealedNamesHelpText) -join "`n"
+        $text | Should -Match 'Conceal user, group, and site names in all reports'
+        $text | Should -Match 'https://admin.microsoft.com'
+        $text | Should -Match 'Settings > Org settings > Services > Reports'
+    }
+    It 'gives numbered steps and says it can be turned back on' {
+        $lines = @(Get-ConcealedNamesHelpText)
+        ($lines | Where-Object { $_ -match '^\s+[123]\. ' }).Count | Should -Be 3
+        ($lines -join ' ') | Should -Match 'turn it back on'
     }
 }
