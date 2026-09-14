@@ -85,7 +85,7 @@ Describe 'Get-DormantLicenseRow' {
     It 'excludes guests by default but includes them with -IncludeGuests' {
         $users = @(New-TestUser -Name 'guest' -Type 'Guest' -Last $null)
         (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
-        (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -IncludeGuests).Count | Should -Be 1
+        @(Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -IncludeGuests).Count | Should -Be 1  # @() so .Count works on Windows PowerShell 5.1
     }
 
     Context 'when no activity signal is available' {
@@ -120,7 +120,7 @@ Describe 'Get-ConcealedNamesHelpText' {
     }
     It 'gives numbered steps and says it can be turned back on' {
         $lines = @(Get-ConcealedNamesHelpText)
-        ($lines | Where-Object { $_ -match '^\s+[123]\. ' }).Count | Should -Be 3
+        @($lines | Where-Object { $_ -match '^\s+[123]\. ' }).Count | Should -Be 3
         ($lines -join ' ') | Should -Match 'turn it back on'
     }
 }
