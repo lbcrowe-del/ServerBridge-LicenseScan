@@ -124,3 +124,28 @@ Describe 'Get-ConcealedNamesHelpText' {
         ($lines -join ' ') | Should -Match 'turn it back on'
     }
 }
+
+Describe 'ConvertTo-SafeCsvValue' {
+    It 'prefixes a quote to text that a spreadsheet would run as a formula' {
+        foreach ($evil in '=HYPERLINK("http://x","y")', '+1+1', '-2+3', '@SUM(A1)', "`tcmd") {
+            ConvertTo-SafeCsvValue -Value $evil | Should -Be ("'" + $evil)
+        }
+    }
+    It 'leaves normal names, emails and numbers alone' {
+        ConvertTo-SafeCsvValue -Value 'Dana Smith' | Should -Be 'Dana Smith'
+        ConvertTo-SafeCsvValue -Value 'dana@contoso.com' | Should -Be 'dana@contoso.com'
+        ConvertTo-SafeCsvValue -Value 432.0 | Should -Be 432.0
+    }
+    It 'passes through null and empty values' {
+        ConvertTo-SafeCsvValue -Value $null | Should -BeNullOrEmpty
+        ConvertTo-SafeCsvValue -Value '' | Should -Be ''
+    }
+}
+
+Describe 'Sign-in hygiene' {
+    It 'keeps the Microsoft sign-in in memory only (process scope)' {
+        $src = Get-Content -Raw (Join-Path $PSScriptRoot '..' 'Invoke-LicenseScan.ps1')
+        $src | Should -Match 'Connect-MgGraph[^\r\n]*-ContextScope Process'
+    }
+}
+
