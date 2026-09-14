@@ -128,6 +128,10 @@ names, the scan can't tell who is inactive. It stops, shows you how to fix it, a
 2. Untick **Conceal user, group, and site names in all reports**.
 3. Click **Save**, go back to the scan and press **Enter**.
 
+| Before (Microsoft's default) | After step 2 |
+|---|---|
+| ![Reports settings with "Conceal user, group, and site names in all reports" ticked](docs/images/reports-setting-before.png) | ![Reports settings with "Conceal user, group, and site names in all reports" unticked](docs/images/reports-setting-after.png) |
+
 The scan checks again with the same sign-in, so you don't have to sign in again. Microsoft can take a
 few minutes to apply the change; if names are still hidden, the scan says so and you can press Enter
 again. Type **S** to skip. The scan then checks only disabled accounts that still hold licenses and
