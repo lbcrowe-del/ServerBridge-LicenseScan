@@ -2,7 +2,7 @@
 
 BeforeAll {
     # Dot-source the script; InvocationName '.' prevents Invoke-LicenseScanMain from running.
-    . (Join-Path $PSScriptRoot '..' 'Invoke-LicenseScan.ps1')
+    . (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
 }
 
 Describe 'Get-SkuMonthlyPrice' {
@@ -85,7 +85,7 @@ Describe 'Get-DormantLicenseRow' {
     It 'excludes guests by default but includes them with -IncludeGuests' {
         $users = @(New-TestUser -Name 'guest' -Type 'Guest' -Last $null)
         (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
-        (Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -IncludeGuests).Count | Should -Be 1
+        @(Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -IncludeGuests).Count | Should -Be 1  # @() so .Count works on Windows PowerShell 5.1
     }
 
     Context 'when no activity signal is available' {
@@ -120,7 +120,7 @@ Describe 'Get-ConcealedNamesHelpText' {
     }
     It 'gives numbered steps and says it can be turned back on' {
         $lines = @(Get-ConcealedNamesHelpText)
-        ($lines | Where-Object { $_ -match '^\s+[123]\. ' }).Count | Should -Be 3
+        @($lines | Where-Object { $_ -match '^\s+[123]\. ' }).Count | Should -Be 3
         ($lines -join ' ') | Should -Match 'turn it back on'
     }
 }
@@ -144,8 +144,17 @@ Describe 'ConvertTo-SafeCsvValue' {
 
 Describe 'Sign-in hygiene' {
     It 'keeps the Microsoft sign-in in memory only (process scope)' {
-        $src = Get-Content -Raw (Join-Path $PSScriptRoot '..' 'Invoke-LicenseScan.ps1')
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
         $src | Should -Match 'Connect-MgGraph[^\r\n]*-ContextScope Process'
+    }
+}
+
+Describe 'Upsell text' {
+    It 'never advertises paid features that are not built' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
+        $src | Should -Not -Match '(?i)downgrade'
+        $src | Should -Not -Match '(?i)service-level waste'
+        $src | Should -Not -Match '(?i)guest/shared'
     }
 }
 
