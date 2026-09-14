@@ -240,6 +240,18 @@ function Get-UsageReportActivityMap {
     return @{ ok = $true; map = $map }
 }
 
+function ConvertTo-SafeCsvValue {
+    <#
+    Spreadsheet apps run a cell as a formula when it starts with = + - @ (or tab/CR).
+    Directory text such as a guest's display name is attacker-controllable, so prefix a
+    single quote to keep it as plain text when the CSV is opened in Excel.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowNull()][AllowEmptyString()][object]$Value)
+    if ($Value -is [string] -and $Value -match '^[=+\-@\t\r]') { return "'" + $Value }
+    return $Value
+}
+
 function Get-ConcealedNamesHelpText {
     <# The one-minute fix for de-identified usage reports, as lines of text (testable). #>
     [CmdletBinding()] param()
@@ -274,7 +286,7 @@ function Invoke-LicenseScanMain {
 
     try {
         Write-Host 'Signing you in (a device code will appear below)...' -ForegroundColor Cyan
-        Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ErrorAction Stop
+        Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop
     } catch {
         Write-Host "Sign-in failed: $($_.Exception.Message)" -ForegroundColor Red
         return
@@ -391,7 +403,13 @@ function Invoke-LicenseScanMain {
         $OutputCsv = Join-Path (Get-Location) ("license-scan_{0}_{1}.csv" -f $safeTenant, (Get-Date -Format 'yyyyMMdd'))
     }
     if ($dormant.Count -gt 0) {
-        $dormant | Sort-Object AnnualCost -Descending | Export-Csv -Path $OutputCsv -NoTypeInformation -Encoding UTF8
+        $dormant | Sort-Object AnnualCost -Descending | ForEach-Object {
+            $row = $_.PSObject.Copy()
+            foreach ($name in 'DisplayName', 'UserPrincipalName', 'UserType', 'Sku') {
+                $row.$name = ConvertTo-SafeCsvValue -Value $row.$name
+            }
+            $row
+        } | Export-Csv -Path $OutputCsv -NoTypeInformation -Encoding UTF8
         Write-Host "Full per-user list saved to:" -ForegroundColor Cyan
         Write-Host "  $OutputCsv" -ForegroundColor White
         Write-Host ''
