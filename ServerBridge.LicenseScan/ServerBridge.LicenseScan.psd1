@@ -1,6 +1,6 @@
 @{
     RootModule        = 'ServerBridge.LicenseScan.psm1'
-    ModuleVersion     = '1.1.0'
+    ModuleVersion     = '1.1.1'
     GUID              = '24b0a1fa-4b98-4900-99db-b0f3c9f960cf'
     Author            = 'Lee Crowe Software Solutions LLC'
     CompanyName       = 'Lee Crowe Software Solutions LLC'
@@ -31,7 +31,7 @@
                              'Windows', 'Linux', 'MacOS')
             LicenseUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan'
-            ReleaseNotes = 'First PowerShell Gallery release. Adds guidance when Microsoft hides user names in usage reports, shows who is signed in, fixes a crash on tenants with no licensed users, protects the CSV against spreadsheet formula injection, and keeps the Microsoft sign-in in memory only.'
+            ReleaseNotes = 'Sign-in: says up front that the device code must be entered within 2 minutes, and if it expires offers a new code in the same window instead of stopping. See CHANGELOG.md on GitHub for earlier changes.'
         }
     }
 }

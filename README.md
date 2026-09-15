@@ -110,6 +110,12 @@ work as usual. If your tenant's Conditional Access blocks **device code flow**, 
 that case, ask whoever manages Conditional Access to allow it for your account while you run the
 scan.
 
+### "The sign-in code expired"
+
+Microsoft only waits **2 minutes** for you to enter the device code. If it runs out, the scan says so
+and offers a new code: press **Enter** and sign in again in the same window. Tip: open
+https://login.microsoft.com/device in your browser before you start the scan.
+
 ### We don't have Entra ID P1. Will it still work?
 
 Yes. Sign-in dates need Entra ID P1, so without it the scan switches to Microsoft 365 usage
