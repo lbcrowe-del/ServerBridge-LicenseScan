@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 — 2026-09-15
+
+### Fixed
+- **Sign-in code expiring.** Microsoft's Graph PowerShell module only waits 2 minutes for the device
+  code, and that limit can't be changed. The scan now tells you before the code appears, and if it
+  expires it offers a new code in the same window (press Enter) instead of stopping.
+
 ## 1.1.0 — 2026-09-14
 
 **Now on the PowerShell Gallery.** Install with `Install-Module ServerBridge.LicenseScan -Scope CurrentUser`

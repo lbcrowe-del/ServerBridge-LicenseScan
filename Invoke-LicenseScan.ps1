@@ -240,6 +240,17 @@ function Get-UsageReportActivityMap {
     return @{ ok = $true; map = $map }
 }
 
+function Test-SignInTimedOut {
+    <#
+    $true when Connect-MgGraph gave up because the device code wasn't used in time. Microsoft's
+    Graph PowerShell module allows 2 minutes and the limit can't be changed, so the scan offers a
+    new code instead of making the admin start over.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Message)
+    return ($Message -match 'timed out after \d+ seconds')
+}
+
 function ConvertTo-SafeCsvValue {
     <#
     Spreadsheet apps run a cell as a formula when it starts with = + - @ (or tab/CR).
@@ -284,12 +295,23 @@ function Invoke-LicenseScanMain {
         return
     }
 
-    try {
-        Write-Host 'Signing you in (a device code will appear below)...' -ForegroundColor Cyan
-        Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop
-    } catch {
-        Write-Host "Sign-in failed: $($_.Exception.Message)" -ForegroundColor Red
-        return
+    $signedIn = $false
+    while (-not $signedIn) {
+        try {
+            Write-Host 'Signing you in. A device code will appear below - enter it within 2 minutes.' -ForegroundColor Cyan
+            Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop
+            $signedIn = $true
+        } catch {
+            $message = "$($_.Exception.Message)"
+            if ((Test-SignInTimedOut -Message $message) -and -not [Console]::IsInputRedirected) {
+                Write-Host 'The sign-in code expired (Microsoft allows 2 minutes).' -ForegroundColor Yellow
+                $answer = Read-Host 'Press Enter for a new code, or type Q to quit'
+                if ($answer -match '^\s*[qQ]') { return }
+                continue
+            }
+            Write-Host "Sign-in failed: $message" -ForegroundColor Red
+            return
+        }
     }
     if (-not (Get-MgContext)) { Write-Host 'Sign-in cancelled.' -ForegroundColor Red; return }
 

@@ -142,6 +142,26 @@ Describe 'ConvertTo-SafeCsvValue' {
     }
 }
 
+Describe 'Test-SignInTimedOut' {
+    It 'recognises Microsoft''s 2-minute device code timeout' {
+        Test-SignInTimedOut -Message 'Authentication timed out after 120 seconds due to inactivity. Please try again.' | Should -BeTrue
+    }
+    It 'does not treat other sign-in errors as a timeout' {
+        Test-SignInTimedOut -Message 'AADSTS50105: The signed in user is not assigned to a role for the application.' | Should -BeFalse
+    }
+    It 'handles an empty message' {
+        Test-SignInTimedOut -Message '' | Should -BeFalse
+    }
+}
+
+Describe 'Sign-in timeout handling' {
+    It 'warns about the 2-minute limit and offers a new code' {
+        $src = Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1') -Raw
+        $src | Should -Match 'enter it within 2 minutes'
+        $src | Should -Match 'Press Enter for a new code'
+    }
+}
+
 Describe 'Sign-in hygiene' {
     It 'keeps the Microsoft sign-in in memory only (process scope)' {
         $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
