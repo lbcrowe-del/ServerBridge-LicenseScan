@@ -13,12 +13,13 @@ AfterAll {
 }
 
 Describe 'ServerBridge.LicenseScan module' {
-    It 'has a valid manifest at version 1.1.1' {
-        (Test-ModuleManifest -Path $manifestPath).Version.ToString() | Should -Be '1.1.1'
+    It 'has a valid manifest at version 1.2.0' {
+        (Test-ModuleManifest -Path $manifestPath).Version.ToString() | Should -Be '1.2.0'
     }
 
-    It 'exports only Invoke-LicenseScan' {
-        (@(Get-Command -Module ServerBridge.LicenseScan | ForEach-Object Name) -join ',') | Should -Be 'Invoke-LicenseScan'
+    It 'exports exactly the two public commands' {
+        $names = @(Get-Command -Module ServerBridge.LicenseScan | ForEach-Object Name) | Sort-Object
+        ($names -join ',') | Should -Be 'Invoke-LicenseScan,Invoke-OffboardingCheck'
     }
 
     It 'declares the Graph modules the scan uses, so Install-Module brings them along' {
@@ -54,5 +55,20 @@ Describe 'ServerBridge.LicenseScan module' {
 
     It 'does not start a scan when the module is imported' {
         Get-Command Invoke-LicenseScanMain -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    }
+
+    It 'does not leak the offboarding entry point either' {
+        Get-Command Invoke-OffboardingCheckMain -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    }
+
+    It 'gives Invoke-OffboardingCheck the same parameters as its standalone script' {
+        $params = (Get-Command Invoke-OffboardingCheck).Parameters.Keys
+        foreach ($name in 'InactiveDays', 'OutputCsv', 'IncludeGuests', 'PassThru') {
+            $params | Should -Contain $name
+        }
+    }
+
+    It 'rejects an out-of-range InactiveDays on the offboarding check too' {
+        { Invoke-OffboardingCheck -InactiveDays 0 } | Should -Throw
     }
 }

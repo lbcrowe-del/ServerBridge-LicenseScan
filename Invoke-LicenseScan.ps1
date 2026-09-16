@@ -276,6 +276,99 @@ function Get-ConcealedNamesHelpText {
     )
 }
 
+function Test-GraphSdkPresent {
+    <#
+    $true when the Microsoft Graph PowerShell SDK is installed; otherwise prints the install hint
+    and returns $false. Shared so every command in this module gives the same first-run message.
+    #>
+    [CmdletBinding()] param()
+    if (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication) { return $true }
+    Write-Host 'Microsoft Graph PowerShell SDK not found.' -ForegroundColor Yellow
+    Write-Host 'Install it with:  Install-Module Microsoft.Graph -Scope CurrentUser' -ForegroundColor Yellow
+    return $false
+}
+
+function Connect-ScanGraph {
+    <#
+    Device-code sign-in with the read-only scopes, offering a fresh code when Microsoft's
+    2-minute limit expires. Returns $true once connected, $false if the user quit or it failed.
+
+    Shared by every command in this module: this retry behaviour was a real bug fix (1.1.1) and
+    must not be reimplemented per command.
+    #>
+    [CmdletBinding()] param()
+    $signedIn = $false
+    while (-not $signedIn) {
+        try {
+            Write-Host 'Signing you in. A device code will appear below - enter it within 2 minutes.' -ForegroundColor Cyan
+            Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop
+            $signedIn = $true
+        } catch {
+            $message = "$($_.Exception.Message)"
+            if ((Test-SignInTimedOut -Message $message) -and -not [Console]::IsInputRedirected) {
+                Write-Host 'The sign-in code expired (Microsoft allows 2 minutes).' -ForegroundColor Yellow
+                $answer = Read-Host 'Press Enter for a new code, or type Q to quit'
+                if ($answer -match '^\s*[qQ]') { return $false }
+                continue
+            }
+            Write-Host "Sign-in failed: $message" -ForegroundColor Red
+            return $false
+        }
+    }
+    if (-not (Get-MgContext)) { Write-Host 'Sign-in cancelled.' -ForegroundColor Red; return $false }
+    return $true
+}
+
+function Resolve-ActivityMap {
+    <#
+    Picks the best available activity signal and returns
+    @{ available=$bool; map=@{ upn(lower) -> [datetime] }; signalName=[string] }.
+
+    Prefers directory sign-in activity (needs Entra ID P1), else the Microsoft 365 usage reports.
+    When the tenant conceals user names in those reports it shows the one-minute fix and re-checks
+    on Enter without a new sign-in. available=$false means the admin skipped, so only disabled
+    accounts can be judged.
+
+    Shared by every command in this module.
+    #>
+    [CmdletBinding()] param([int]$InactiveDays = 90)
+
+    $sia = Get-SignInActivityMap
+    if ($sia.ok) {
+        return @{ available = $true; map = $sia.map; signalName = 'directory sign-in activity' }
+    }
+
+    Write-Host 'Sign-in activity needs Entra ID P1; falling back to Microsoft 365 usage reports...' -ForegroundColor Yellow
+    $rep = $null
+    $attempt = 0
+    while ($true) {
+        try {
+            $rep = Get-UsageReportActivityMap -InactiveDays $InactiveDays
+        } catch {
+            $rep = $null
+            Write-Host "Usage reports unavailable: $($_.Exception.Message)" -ForegroundColor Yellow
+            break
+        }
+        if ($rep.ok) { break }
+
+        $attempt++
+        Write-Host ''
+        if ($attempt -gt 1) {
+            Write-Host 'Names are still hidden. Microsoft can take a few minutes to apply the change.' -ForegroundColor Yellow
+        } else {
+            Get-ConcealedNamesHelpText | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+        }
+        if ([Console]::IsInputRedirected) { break }
+        $answer = Read-Host 'Press Enter when done to check again (no new sign-in), or type S to skip'
+        if ($answer -match '^\s*[sS]') { break }
+    }
+
+    if ($rep -and $rep.ok) {
+        return @{ available = $true; map = $rep.map; signalName = 'Microsoft 365 usage reports' }
+    }
+    return @{ available = $false; map = @{}; signalName = $null }
+}
+
 function Invoke-LicenseScanMain {
     [CmdletBinding()]
     param(
@@ -289,31 +382,8 @@ function Invoke-LicenseScanMain {
     Write-Host 'ServerBridge - Free M365 License Scan (read-only)' -ForegroundColor Green
     Write-Host '-------------------------------------------------' -ForegroundColor DarkGray
 
-    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-        Write-Host 'Microsoft Graph PowerShell SDK not found.' -ForegroundColor Yellow
-        Write-Host 'Install it with:  Install-Module Microsoft.Graph -Scope CurrentUser' -ForegroundColor Yellow
-        return
-    }
-
-    $signedIn = $false
-    while (-not $signedIn) {
-        try {
-            Write-Host 'Signing you in. A device code will appear below - enter it within 2 minutes.' -ForegroundColor Cyan
-            Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop
-            $signedIn = $true
-        } catch {
-            $message = "$($_.Exception.Message)"
-            if ((Test-SignInTimedOut -Message $message) -and -not [Console]::IsInputRedirected) {
-                Write-Host 'The sign-in code expired (Microsoft allows 2 minutes).' -ForegroundColor Yellow
-                $answer = Read-Host 'Press Enter for a new code, or type Q to quit'
-                if ($answer -match '^\s*[qQ]') { return }
-                continue
-            }
-            Write-Host "Sign-in failed: $message" -ForegroundColor Red
-            return
-        }
-    }
-    if (-not (Get-MgContext)) { Write-Host 'Sign-in cancelled.' -ForegroundColor Red; return }
+    if (-not (Test-GraphSdkPresent)) { return }
+    if (-not (Connect-ScanGraph)) { return }
 
     try {
         $org = Get-MgOrganization -ErrorAction Stop
@@ -334,46 +404,13 @@ function Invoke-LicenseScanMain {
     }
 
     # Resolve an activity signal: prefer sign-in activity (premium), fall back to usage reports.
-    $activity = @{}
-    $signalAvailable = $true
-    $signalName = 'directory sign-in activity'
-    $sia = Get-SignInActivityMap
-    if ($sia.ok) {
-        $activity = $sia.map
-    } else {
-        Write-Host 'Sign-in activity needs Entra ID P1; falling back to Microsoft 365 usage reports...' -ForegroundColor Yellow
-        $rep = $null
-        $attempt = 0
-        while ($true) {
-            try {
-                $rep = Get-UsageReportActivityMap -InactiveDays $InactiveDays
-            } catch {
-                $rep = $null
-                Write-Host "Usage reports unavailable: $($_.Exception.Message)" -ForegroundColor Yellow
-                break
-            }
-            if ($rep.ok) { break }
-
-            $attempt++
-            Write-Host ''
-            if ($attempt -gt 1) {
-                Write-Host 'Names are still hidden. Microsoft can take a few minutes to apply the change.' -ForegroundColor Yellow
-            } else {
-                Get-ConcealedNamesHelpText | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
-            }
-            if ([Console]::IsInputRedirected) { break }
-            $answer = Read-Host 'Press Enter when done to check again (no new sign-in), or type S to skip'
-            if ($answer -match '^\s*[sS]') { break }
-        }
-
-        if ($rep -and $rep.ok) {
-            $activity = $rep.map
-            $signalName = 'Microsoft 365 usage reports'
-        } else {
-            $signalAvailable = $false
-            Write-Host ''
-            Write-Host 'PARTIAL AUDIT: only disabled accounts that still hold licenses can be checked.' -ForegroundColor Yellow
-        }
+    $signal = Resolve-ActivityMap -InactiveDays $InactiveDays
+    $activity = $signal.map
+    $signalAvailable = $signal.available
+    $signalName = $signal.signalName
+    if (-not $signalAvailable) {
+        Write-Host ''
+        Write-Host 'PARTIAL AUDIT: only disabled accounts that still hold licenses can be checked.' -ForegroundColor Yellow
     }
 
     if ($signalAvailable) {

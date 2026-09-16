@@ -1,15 +1,19 @@
-# ServerBridge License Scan — free Microsoft 365 unused-license scan
+# ServerBridge License Scan — free, read-only Microsoft 365 checks
 
-**See, in dollars, the Microsoft 365 licenses you pay for that nobody uses — in five minutes, read-only.**
+**Two questions answered in about five minutes each, without changing a thing in your tenant:
+what are you paying for that nobody uses, and what did the leavers keep?**
 
 ```powershell
 Install-Module ServerBridge.LicenseScan -Scope CurrentUser
-Invoke-LicenseScan
+
+Invoke-LicenseScan        # licenses nobody is using, in dollars
+Invoke-OffboardingCheck   # accounts that look like leavers, and what they still hold
 ```
 
-No app registration. No agent. Nothing stored. It never changes anything in your tenant.
+No app registration. No agent. Nothing stored. Neither command ever changes anything in your tenant
+— they produce a list, and you decide what to do with it.
 
-> This is the free community scan. The paid **[ServerBridge License Auditor](https://server-bridge.com/license-auditor.html)**
+> This is the free community module. The paid **[ServerBridge License Auditor](https://server-bridge.com/license-auditor.html)**
 > adds a PDF report, costed recommended actions and scheduled re-audits.
 
 ## What it checks
@@ -39,6 +43,47 @@ POWER_BI_PRO              6      720
 
 Free licenses (Teams Exploratory, Power Automate Free and similar) are skipped. Guest accounts
 are skipped unless you add `-IncludeGuests`.
+
+## The offboarding check
+
+```powershell
+Invoke-OffboardingCheck
+```
+
+When someone leaves, the license is usually the only thing anyone remembers to remove. The account
+keeps its group memberships and a mailbox nobody converted to shared, and it sits there until an
+audit finds it.
+
+This finds accounts that **look like leavers** — disabled, or no activity for 90 days
+(`-InactiveDays`) — and shows what each one still holds:
+
+| Column | What it tells you |
+|---|---|
+| `Reason` | `disabled`, or `inactive` |
+| `Licenses` | paid licenses still assigned (free SKUs aren't counted) |
+| `GroupCount` | how many groups and directory roles it still belongs to |
+| `MailboxType` | `user` means nobody converted it to a shared mailbox |
+
+```
+UserPrincipalName        Reason   Licenses       GroupCount MailboxType
+-----------------        ------   --------       ---------- -----------
+j.smith@contoso.com      disabled ENTERPRISEPACK          7 user
+a.jones@contoso.com      inactive SPE_E5                  3 user
+temp.contractor@cont.com disabled                         1 shared
+
+  Accounts to review     : 3
+  Still holding licenses : 2
+  Mailbox not shared     : 2
+```
+
+One row per person, not per license, because offboarding is a per-person job. The full list goes to
+`offboarding-check_<tenant>_<date>.csv`.
+
+**Two honest limits.** Mailbox type comes from Microsoft's mailbox usage report, which lags a day or
+two — a mailbox converted this morning still reads as `user`. And if your tenant conceals user names
+in reports, mailbox type reads `unknown` for everyone rather than guessing. Group counts come from
+each account's direct memberships; if the count can't be read it stays blank instead of showing `0`,
+because `0` would wrongly suggest the account is clean.
 
 ## Requirements
 
@@ -75,8 +120,17 @@ Invoke-LicenseScan -OutputCsv C:\reports\waste.csv  # choose where the CSV goes
 Invoke-LicenseScan -PassThru | Sort-Object AnnualCost -Descending   # get the rows as objects
 ```
 
-By default the CSV is saved to the current folder as `license-scan_<tenant>_<date>.csv`. It is only
-written when the scan finds something.
+Both commands take the same four options:
+
+```powershell
+Invoke-OffboardingCheck -InactiveDays 30                    # stricter "looks like a leaver"
+Invoke-OffboardingCheck -IncludeGuests                      # also include guest accounts
+Invoke-OffboardingCheck -OutputCsv C:\reports\leavers.csv   # choose where the CSV goes
+Invoke-OffboardingCheck -PassThru | Where-Object LicenseCount -gt 0   # get the rows as objects
+```
+
+By default the CSV is saved to the current folder as `license-scan_<tenant>_<date>.csv` or
+`offboarding-check_<tenant>_<date>.csv`. It is only written when there is something to report.
 
 **Prices are list-price estimates** in USD per user per month, so you get a dollar figure out of the
 box. Unknown SKUs are priced at $20. For exact figures, edit the price table near the top of
@@ -159,6 +213,10 @@ the Graph SDK (`Install-Module Microsoft.Graph -Scope CurrentUser`) and run `./I
 with the same options. Windows may ask whether to run software from this publisher. Choose
 **Run once** or **Always run**.
 
+`Invoke-OffboardingCheck.ps1` is on the same release page and runs the same way, but it needs
+`Invoke-LicenseScan.ps1` **in the same folder** — the sign-in and activity helpers live there, in one
+copy, rather than being duplicated into both scripts.
+
 ## Privacy and safety
 
 - **Read-only.** It never assigns, removes or changes licenses, users or settings.
@@ -181,7 +239,8 @@ Get-InstalledModule ServerBridge.LicenseScan | ForEach-Object {
 # Every Status should be 'Valid'
 ```
 
-For the standalone script: `Get-AuthenticodeSignature ./Invoke-LicenseScan.ps1`
+For the standalone scripts:
+`Get-AuthenticodeSignature ./Invoke-LicenseScan.ps1, ./Invoke-OffboardingCheck.ps1`
 
 ## When you outgrow the free scan
 

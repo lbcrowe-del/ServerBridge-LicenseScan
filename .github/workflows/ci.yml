@@ -26,6 +26,7 @@ jobs:
         run: |
           $issues = @(
             Invoke-ScriptAnalyzer -Path ./Invoke-LicenseScan.ps1 -Settings ./PSScriptAnalyzerSettings.psd1
+            Invoke-ScriptAnalyzer -Path ./Invoke-OffboardingCheck.ps1 -Settings ./PSScriptAnalyzerSettings.psd1
             Invoke-ScriptAnalyzer -Path ./ServerBridge.LicenseScan -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
             Invoke-ScriptAnalyzer -Path ./build -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
           )
