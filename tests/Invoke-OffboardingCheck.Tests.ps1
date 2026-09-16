@@ -1,0 +1,182 @@
+#Requires -Modules Pester
+
+BeforeAll {
+    # Dot-source the script; InvocationName '.' prevents Invoke-OffboardingCheckMain from running.
+    # It dot-sources Invoke-LicenseScan.ps1 itself for the shared helpers.
+    . (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+}
+
+Describe 'Get-MailboxTypeLabel' {
+    It 'maps Microsoft''s recipient types to plain words' {
+        Get-MailboxTypeLabel -RecipientType 'UserMailbox' | Should -Be 'user'
+        Get-MailboxTypeLabel -RecipientType 'SharedMailbox' | Should -Be 'shared'
+        Get-MailboxTypeLabel -RecipientType 'RoomMailbox' | Should -Be 'room'
+        Get-MailboxTypeLabel -RecipientType 'EquipmentMailbox' | Should -Be 'equipment'
+    }
+    It 'accepts the short forms the report sometimes uses' {
+        Get-MailboxTypeLabel -RecipientType 'Shared' | Should -Be 'shared'
+        Get-MailboxTypeLabel -RecipientType 'User' | Should -Be 'user'
+    }
+    It 'says unknown rather than guessing when the report has no value' {
+        Get-MailboxTypeLabel -RecipientType $null | Should -Be 'unknown'
+        Get-MailboxTypeLabel -RecipientType '' | Should -Be 'unknown'
+        Get-MailboxTypeLabel -RecipientType '   ' | Should -Be 'unknown'
+    }
+    It 'passes an unrecognised type through instead of dropping it' {
+        Get-MailboxTypeLabel -RecipientType 'SomethingNew' | Should -Be 'somethingnew'
+    }
+}
+
+Describe 'Get-OffboardingRow' {
+    BeforeAll {
+        $skuMap = @{
+            'sku-e3'   = 'ENTERPRISEPACK'
+            'sku-e5'   = 'SPE_E5'
+            'sku-free' = 'TEAMS_EXPLORATORY'
+        }
+        $cutoff = (Get-Date).AddDays(-90)
+
+        function New-TestAccount {
+            param(
+                $Name,
+                $Type = 'Member',
+                $Enabled = $true,
+                $Last = $null,
+                $Skus = @('sku-e3'),
+                $Groups = 0,
+                $Mailbox = 'user'
+            )
+            [pscustomobject]@{
+                DisplayName       = $Name
+                UserPrincipalName = "$Name@contoso.com"
+                UserType          = $Type
+                AccountEnabled    = $Enabled
+                LastActivity      = $Last
+                AssignedLicenses  = @($Skus | ForEach-Object { [pscustomobject]@{ SkuId = $_ } })
+                GroupCount        = $Groups
+                MailboxType       = $Mailbox
+            }
+        }
+    }
+
+    It 'emits ONE row per account, not one per license' {
+        $users = @(New-TestAccount -Name 'dana' -Skus @('sku-e3', 'sku-e5'))
+        $rows = @(Get-OffboardingRow -Users $users -SkuMap $skuMap -Cutoff $cutoff)
+        $rows.Count | Should -Be 1
+        $rows[0].LicenseCount | Should -Be 2
+        $rows[0].Licenses | Should -Be 'ENTERPRISEPACK; SPE_E5'
+    }
+
+    It 'flags a disabled account as disabled' {
+        $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'gone' -Enabled $false -Last (Get-Date)) `
+                -SkuMap $skuMap -Cutoff $cutoff)
+        $rows.Count | Should -Be 1
+        $rows[0].Reason | Should -Be 'disabled'
+    }
+
+    It 'flags an inactive account as inactive' {
+        $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'quiet' -Last (Get-Date).AddDays(-200)) `
+                -SkuMap $skuMap -Cutoff $cutoff)
+        $rows[0].Reason | Should -Be 'inactive'
+        $rows[0].LastActivity | Should -Not -Be 'never/unknown'
+    }
+
+    It 'skips accounts that are enabled and recently active' {
+        (Get-OffboardingRow -Users @(New-TestAccount -Name 'here' -Last (Get-Date).AddDays(-2)) `
+                -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
+    }
+
+    It 'does not count free SKUs as licenses worth reclaiming' {
+        $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'freeonly' -Skus @('sku-free')) `
+                -SkuMap $skuMap -Cutoff $cutoff)
+        $rows.Count | Should -Be 1
+        $rows[0].LicenseCount | Should -Be 0
+        $rows[0].Findings | Should -Not -Match 'still licensed'
+    }
+
+    It 'excludes guests by default but includes them with -IncludeGuests' {
+        $guest = @(New-TestAccount -Name 'guest' -Type 'Guest')
+        (Get-OffboardingRow -Users $guest -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
+        @(Get-OffboardingRow -Users $guest -SkuMap $skuMap -Cutoff $cutoff -IncludeGuests).Count | Should -Be 1
+    }
+
+    Context 'findings summary' {
+        It 'names every problem it found' {
+            $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'all' -Groups 4 -Mailbox 'user') `
+                    -SkuMap $skuMap -Cutoff $cutoff)
+            $rows[0].Findings | Should -Match 'still licensed'
+            $rows[0].Findings | Should -Match 'still in groups'
+            $rows[0].Findings | Should -Match 'mailbox not shared'
+        }
+
+        It 'does not complain about a mailbox already converted to shared' {
+            $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'converted' -Mailbox 'shared') `
+                    -SkuMap $skuMap -Cutoff $cutoff)
+            $rows[0].Findings | Should -Not -Match 'mailbox not shared'
+        }
+
+        It 'does not claim group membership when the count is zero' {
+            $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'nogroups' -Groups 0) `
+                    -SkuMap $skuMap -Cutoff $cutoff)
+            $rows[0].Findings | Should -Not -Match 'still in groups'
+        }
+    }
+
+    It 'keeps an unknown group count as unknown rather than reporting 0' {
+        $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'unknowngroups' -Groups $null) `
+                -SkuMap $skuMap -Cutoff $cutoff)
+        $rows[0].GroupCount | Should -BeNullOrEmpty
+        $rows[0].Findings | Should -Not -Match 'still in groups'
+    }
+
+    It 'reports an unknown mailbox type rather than assuming it is a user mailbox' {
+        $rows = @(Get-OffboardingRow -Users @(New-TestAccount -Name 'nomailboxdata' -Mailbox $null) `
+                -SkuMap $skuMap -Cutoff $cutoff)
+        $rows[0].MailboxType | Should -Be 'unknown'
+        $rows[0].Findings | Should -Not -Match 'mailbox not shared'
+    }
+
+    Context 'when no activity signal is available' {
+        It 'flags only disabled accounts, never inactive-looking enabled ones' {
+            $users = @(
+                New-TestAccount -Name 'enabled-noactivity' -Last $null
+                New-TestAccount -Name 'disabled' -Enabled $false -Last $null
+            )
+            $rows = @(Get-OffboardingRow -Users $users -SkuMap $skuMap -Cutoff $cutoff -ActivitySignalAvailable $false)
+            $rows.Count | Should -Be 1
+            $rows[0].UserPrincipalName | Should -Be 'disabled@contoso.com'
+        }
+    }
+
+    It 'handles a null user set without error (tenant with 0 users)' {
+        { Get-OffboardingRow -Users $null -SkuMap $skuMap -Cutoff $cutoff } | Should -Not -Throw
+        (Get-OffboardingRow -Users $null -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
+    }
+
+    It 'handles an empty user set without error' {
+        (Get-OffboardingRow -Users @() -SkuMap $skuMap -Cutoff $cutoff) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Shared helpers are reused, not reimplemented' {
+    It 'relies on Invoke-LicenseScan.ps1 for sign-in and activity rather than its own copy' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $src | Should -Match 'Connect-ScanGraph'
+        $src | Should -Match 'Resolve-ActivityMap'
+        # The device-code retry lives in exactly one place; a second copy here would drift.
+        $src | Should -Not -Match 'UseDeviceCode'
+    }
+}
+
+Describe 'Offboarding upsell text' {
+    It 'never advertises paid features that are not built' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $src | Should -Not -Match '(?i)downgrade'
+        $src | Should -Not -Match '(?i)service-level waste'
+        $src | Should -Not -Match '(?i)white.?label'
+    }
+    It 'says plainly that it changes nothing' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $src | Should -Match 'never writes, removes, or changes anything'
+    }
+}

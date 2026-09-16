@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.0 — 2026-09-16
+
+### Added
+- **New command: `Invoke-OffboardingCheck`.** Finds accounts that look like leavers — disabled, or no
+  activity for `-InactiveDays` — and shows what each one still holds: paid licenses, how many groups
+  and directory roles it still belongs to, and whether its mailbox was never converted to shared.
+  One row per person, not per license, plus a CSV. Read-only, like everything else here.
+- Mailbox type comes from Microsoft's mailbox usage report, so no Exchange Online PowerShell is
+  needed and no extra permission is requested — it uses the same `Reports.Read.All` the license scan
+  already asks for.
+
+### Changed
+- The module now exports two commands. Both share one copy of the device-code sign-in (including the
+  2-minute retry added in 1.1.1), the Entra P1 → usage-report fallback, the concealed-names help and
+  the CSV escaping, so the two checks can't drift apart.
+
+### Notes
+- Where the offboarding check can't know something, it says so instead of guessing: an unreadable
+  group count stays blank rather than showing `0`, and mailbox type reads `unknown` when the report
+  lags or your tenant conceals user names.
+
 ## 1.1.1 — 2026-09-15
 
 ### Fixed

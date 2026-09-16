@@ -77,9 +77,11 @@ jobs:
         run: |
           $files = @(
             './Invoke-LicenseScan.ps1'
+            './Invoke-OffboardingCheck.ps1'
             './out/ServerBridge.LicenseScan/ServerBridge.LicenseScan.psd1'
             './out/ServerBridge.LicenseScan/ServerBridge.LicenseScan.psm1'
             './out/ServerBridge.LicenseScan/Invoke-LicenseScan.ps1'
+            './out/ServerBridge.LicenseScan/Invoke-OffboardingCheck.ps1'
           )
           foreach ($file in $files) {
             sign code artifact-signing `
@@ -96,7 +98,7 @@ jobs:
       - name: Verify signatures
         shell: pwsh
         run: |
-          $files = @('./Invoke-LicenseScan.ps1') + (Get-ChildItem ./out/ServerBridge.LicenseScan -Include *.ps1, *.psm1, *.psd1 -Recurse | ForEach-Object FullName)
+          $files = @('./Invoke-LicenseScan.ps1', './Invoke-OffboardingCheck.ps1') + (Get-ChildItem ./out/ServerBridge.LicenseScan -Include *.ps1, *.psm1, *.psd1 -Recurse | ForEach-Object FullName)
           foreach ($file in $files) {
             $sig = Get-AuthenticodeSignature $file
             Write-Host "$file : $($sig.Status) ($($sig.SignerCertificate.Subject))"
@@ -123,4 +125,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           Compress-Archive -Path ./out/ServerBridge.LicenseScan -DestinationPath ./ServerBridge.LicenseScan.zip -Force
-          gh release upload "${{ github.event.release.tag_name }}" ./Invoke-LicenseScan.ps1 ./ServerBridge.LicenseScan.zip --clobber
+          gh release upload "${{ github.event.release.tag_name }}" ./Invoke-LicenseScan.ps1 ./Invoke-OffboardingCheck.ps1 ./ServerBridge.LicenseScan.zip --clobber
