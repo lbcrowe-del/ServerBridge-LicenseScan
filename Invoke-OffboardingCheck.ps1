@@ -364,6 +364,8 @@ function Invoke-OffboardingCheckMain {
 
     Write-Host 'Nothing was changed in your tenant. Review each account before acting.' -ForegroundColor DarkGray
     Write-Host 'A licensed shared mailbox under 50 GB without an archive usually needs no license.' -ForegroundColor DarkGray
+    Write-Host 'Got an account it judged wrong, or something confusing? Tell me:' -ForegroundColor DarkGray
+    Write-Host '  https://github.com/lbcrowe-del/ServerBridge-LicenseScan/issues' -ForegroundColor Cyan
     Write-Host ''
 
     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null

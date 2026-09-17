@@ -513,6 +513,8 @@ function Invoke-LicenseScanMain {
     }
 
     Write-Host 'Prices are list-price estimates - edit the price table for exact figures.' -ForegroundColor DarkGray
+    Write-Host 'Got a number that looks wrong, or something confusing? Tell me:' -ForegroundColor DarkGray
+    Write-Host '  https://github.com/lbcrowe-del/ServerBridge-LicenseScan/issues' -ForegroundColor Cyan
     Write-Host 'Want the PDF report, costed recommended actions and scheduled re-audits?' -ForegroundColor DarkGray
     Write-Host '  https://server-bridge.com/license-auditor.html' -ForegroundColor Cyan
     Write-Host ''
