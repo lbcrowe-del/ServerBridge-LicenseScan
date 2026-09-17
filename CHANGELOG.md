@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.1 — 2026-09-17
+
+### Fixed
+- **Mobile-only users were reported as dormant.** Both commands read only Microsoft's *interactive*
+  sign-in timestamp. People who live in Outlook or Teams on a phone often have no interactive
+  sign-in at all, because those clients sign in on the user's behalf — so an active person could be
+  listed as a licence worth removing. That is the worst mistake this tool can make, and it's fixed:
+  the scan now takes the most recent of Microsoft's three timestamps
+  (`lastSuccessfulSignInDateTime`, `lastSignInDateTime`, `lastNonInteractiveSignInDateTime`).
+  Reported by **robofski** on r/PowerShell.
+
+### Notes
+- The new reading deliberately errs toward "active". Under-flagging costs you a missed saving;
+  over-flagging tells you to remove a licence from someone still working.
+- `lastSuccessfulSignInDateTime` is the best signal — it means the account was genuinely accessed —
+  but Microsoft only began populating it in December 2023 and never backfilled it, so older tenants
+  fall back to the other two.
+- Tenants without Entra ID P1 were never affected: the usage-report fallback measures service
+  activity, not sign-ins.
+
 ## 1.2.0 — 2026-09-16
 
 ### Added

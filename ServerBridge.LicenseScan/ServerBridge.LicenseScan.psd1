@@ -1,6 +1,6 @@
 @{
     RootModule        = 'ServerBridge.LicenseScan.psm1'
-    ModuleVersion     = '1.2.0'
+    ModuleVersion     = '1.2.1'
     GUID              = '24b0a1fa-4b98-4900-99db-b0f3c9f960cf'
     Author            = 'Lee Crowe Software Solutions LLC'
     CompanyName       = 'Lee Crowe Software Solutions LLC'
@@ -32,7 +32,7 @@
                              'Windows', 'Linux', 'MacOS')
             LicenseUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan'
-            ReleaseNotes = 'New command Invoke-OffboardingCheck: finds accounts that look like leavers (disabled, or inactive for N days) and shows what each still holds - paid licenses, group membership count, and whether the mailbox was never converted to shared. Read-only, same device-code sign-in and scopes as the license scan. See CHANGELOG.md on GitHub for earlier changes.'
+            ReleaseNotes = 'Accuracy fix: both commands now read non-interactive and successful sign-ins as well as interactive ones. Reading only interactive sign-ins made people who use Outlook or Teams on a phone look dormant, because those clients sign in on the user''s behalf - so an active user could be reported as a licence worth removing. Thanks to robofski on r/PowerShell for reporting it. See CHANGELOG.md on GitHub for earlier changes.'
         }
     }
 }
