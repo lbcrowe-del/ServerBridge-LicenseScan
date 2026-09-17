@@ -20,6 +20,49 @@ Describe 'Get-SkuMonthlyPrice' {
     }
 }
 
+Describe 'Get-NewestSignIn' {
+    BeforeAll {
+        $old = (Get-Date).AddDays(-400)
+        $recent = (Get-Date).AddDays(-5)
+        $newest = (Get-Date).AddDays(-1)
+    }
+
+    It 'returns nothing when the user has no sign-in timestamps at all' {
+        Get-NewestSignIn -Interactive $null -NonInteractive $null -Successful $null | Should -BeNullOrEmpty
+    }
+
+    It 'does NOT call a mobile-only user dormant' {
+        # robofski, r/PowerShell 2026-09-17: Outlook and Teams on a phone sign in non-interactively,
+        # so a working user can have no interactive sign-in. Reading only the interactive timestamp
+        # returned nothing here and flagged them for licence removal.
+        Get-NewestSignIn -Interactive $null -NonInteractive $recent -Successful $null |
+            Should -Be $recent
+    }
+
+    It 'takes the most recent timestamp whichever property it came from' {
+        Get-NewestSignIn -Interactive $newest -NonInteractive $old -Successful $recent | Should -Be $newest
+        Get-NewestSignIn -Interactive $old -NonInteractive $newest -Successful $recent | Should -Be $newest
+        Get-NewestSignIn -Interactive $old -NonInteractive $recent -Successful $newest | Should -Be $newest
+    }
+
+    It 'still works on tenants where lastSuccessfulSignInDateTime was never backfilled' {
+        # Microsoft only began populating that property in Dec 2023 and did not backfill it.
+        Get-NewestSignIn -Interactive $recent -NonInteractive $old -Successful $null | Should -Be $recent
+    }
+
+    It 'errs toward active, which is the deliberate choice' {
+        # Under-flagging costs a missed saving; over-flagging tells an admin to strip a licence
+        # from someone still working.
+        Get-NewestSignIn -Interactive $old -NonInteractive $newest -Successful $null | Should -Be $newest
+    }
+
+    It 'accepts the string timestamps Graph sometimes hands back' {
+        $asText = (Get-Date).AddDays(-3).ToString('o')
+        (Get-NewestSignIn -Interactive $asText -NonInteractive $old -Successful $null) |
+            Should -BeOfType [datetime]
+    }
+}
+
 Describe 'Test-UserDormant' {
     BeforeAll { $cutoff = (Get-Date).AddDays(-90) }
 

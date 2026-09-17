@@ -177,6 +177,38 @@ function Get-DormantLicenseRow {
     }
 }
 
+function Get-NewestSignIn {
+    <#
+    The most recent of a user's sign-in timestamps, or $null when none are set.
+
+    Microsoft splits sign-in activity across three properties and reading only the first one
+    (lastSignInDateTime) makes people who live in Outlook or Teams on a phone look dormant, because
+    those clients sign in non-interactively. Reported by robofski on r/PowerShell, 2026-09-17.
+
+      * lastSuccessfulSignInDateTime - "the account was truly accessed", interactive OR
+        non-interactive. Best signal, but Microsoft only started populating it in Dec 2023 and did
+        not backfill, so older tenants can have it empty.
+      * lastSignInDateTime - INTERACTIVE attempts only, successful or not.
+      * lastNonInteractiveSignInDateTime - client sign-ins on the user's behalf (mobile mail,
+        Teams). Microsoft's own inactive-user guidance says to use it alongside the interactive one.
+
+    Taking the newest of the three deliberately errs toward "active": under-flagging costs a missed
+    saving, over-flagging tells someone to remove a license from a person who is still working.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()][AllowNull()][object]$Interactive,
+        [Parameter()][AllowNull()][object]$NonInteractive,
+        [Parameter()][AllowNull()][object]$Successful
+    )
+
+    $dates = @($Successful, $Interactive, $NonInteractive) |
+        ForEach-Object { if ($_) { $_ -as [datetime] } } |
+        Where-Object { $_ }
+    if (-not $dates) { return $null }
+    return (@($dates) | Sort-Object -Descending)[0]
+}
+
 # ---------------------------------------------------------------------------
 # Graph I/O (kept in functions so tests can dot-source without a tenant)
 # ---------------------------------------------------------------------------
@@ -194,7 +226,13 @@ function Get-SignInActivityMap {
             -Filter 'assignedLicenses/$count ne 0' -ConsistencyLevel eventual `
             -CountVariable siaCount -ErrorAction Stop
         foreach ($u in $users) {
-            if ($u.UserPrincipalName) { $map[$u.UserPrincipalName.ToLower()] = $u.SignInActivity.LastSignInDateTime }
+            if ($u.UserPrincipalName) {
+                # All three timestamps, not just the interactive one - see Get-NewestSignIn.
+                $map[$u.UserPrincipalName.ToLower()] = Get-NewestSignIn `
+                    -Interactive $u.SignInActivity.LastSignInDateTime `
+                    -NonInteractive $u.SignInActivity.LastNonInteractiveSignInDateTime `
+                    -Successful $u.SignInActivity.LastSuccessfulSignInDateTime
+            }
         }
         return @{ ok = $true; map = $map }
     } catch {

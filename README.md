@@ -20,7 +20,10 @@ No app registration. No agent. Nothing stored. Neither command ever changes anyt
 
 1. Reads your subscribed licenses (SKUs) and who each one is assigned to.
 2. Looks up each licensed user's last activity:
-   - **directory sign-in activity** if your tenant has Microsoft Entra ID P1 or P2, or
+   - **directory sign-in activity** if your tenant has Microsoft Entra ID P1 or P2 — the most recent
+     of Microsoft's three timestamps: successful, interactive, and **non-interactive**. That last one
+     matters: someone who lives in Outlook or Teams on a phone may have no interactive sign-in at
+     all, and reading only interactive sign-ins would call them dormant.
    - **Microsoft 365 usage reports** if it doesn't (no premium license needed).
 3. Flags as dormant:
    - accounts with no activity in the last **90 days** (change with `-InactiveDays`), and
@@ -169,6 +172,16 @@ scan.
 Microsoft only waits **2 minutes** for you to enter the device code. If it runs out, the scan says so
 and offers a new code: press **Enter** and sign in again in the same window. Tip: open
 https://login.microsoft.com/device in your browser before you start the scan.
+
+### Does it count people who only use Outlook or Teams on their phone?
+
+Yes. Those clients sign in *on your behalf*, which Microsoft records as a **non-interactive** sign-in
+in a separate field from interactive ones. The scan takes the most recent of all three timestamps
+(`lastSuccessfulSignInDateTime`, `lastSignInDateTime`, `lastNonInteractiveSignInDateTime`), so a
+mobile-only user counts as active.
+
+It errs deliberately toward "active": missing a dormant seat costs you a saving, but wrongly flagging
+an active person could cost them their mailbox.
 
 ### We don't have Entra ID P1. Will it still work?
 
