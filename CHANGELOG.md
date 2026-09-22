@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixed
+- **`-OutputCsv`, `-IncludeGuests` and `-PassThru` were ignored by `Invoke-OffboardingCheck.ps1`.**
+  Running the script directly, the CSV went to the default path and guests were never included, with
+  no warning either way. (The module command `Invoke-OffboardingCheck` was unaffected.)
 - **Sign-in was impossible on Microsoft Graph PowerShell SDK 2.38.** Both commands printed "a device
   code will appear below", then no code, then timed out after two minutes. `Connect-MgGraph
   -UseDeviceCode` writes the code to PowerShell's *success* stream, and both commands called the

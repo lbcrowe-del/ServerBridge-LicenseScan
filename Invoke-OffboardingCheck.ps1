@@ -88,6 +88,21 @@ param(
     [switch]$PassThru
 )
 
+# Snapshot what the caller actually passed, BEFORE the dot-source below.
+#
+# Invoke-LicenseScan.ps1 has its own param() block with InactiveDays, OutputCsv, IncludeGuests and
+# PassThru. Dot-sourcing runs it in THIS scope, so those four variables are re-declared at their
+# defaults and whatever the caller passed here is wiped. The symptom was silent: -OutputCsv wrote to
+# the default path instead, and -IncludeGuests did nothing at all while reporting success.
+# Found 2026-09-22 when a run ignored the -OutputCsv it was given.
+$callerArgs = @{
+    InactiveDays      = $InactiveDays
+    OutputCsv         = $OutputCsv
+    IncludeGuests     = [bool]$IncludeGuests
+    UseExchangeOnline = [bool]$UseExchangeOnline
+    PassThru          = [bool]$PassThru
+}
+
 # Shared helpers (sign-in, activity signal, CSV escaping) live in Invoke-LicenseScan.ps1 so there
 # is exactly one copy. Dot-sourcing it defines the functions without running a scan: that script
 # only runs its entry point when it is not dot-sourced.
@@ -480,7 +495,9 @@ function Invoke-OffboardingCheckMain {
 }
 
 # Run unless dot-sourced (e.g. by Pester tests, where InvocationName is '.').
+# Splats the snapshot taken before the dot-source, NOT the live variables - see the note there.
 if ($MyInvocation.InvocationName -ne '.') {
-    Invoke-OffboardingCheckMain -InactiveDays $InactiveDays -OutputCsv $OutputCsv `
-        -IncludeGuests:$IncludeGuests -UseExchangeOnline:$UseExchangeOnline -PassThru:$PassThru
+    Invoke-OffboardingCheckMain -InactiveDays $callerArgs.InactiveDays -OutputCsv $callerArgs.OutputCsv `
+        -IncludeGuests:$callerArgs.IncludeGuests -UseExchangeOnline:$callerArgs.UseExchangeOnline `
+        -PassThru:$callerArgs.PassThru
 }
