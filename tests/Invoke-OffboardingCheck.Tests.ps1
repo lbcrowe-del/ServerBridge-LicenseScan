@@ -180,3 +180,56 @@ Describe 'Offboarding upsell text' {
         $src | Should -Match 'never writes, removes, or changes anything'
     }
 }
+
+Describe 'Exchange Online mailbox types (prototype)' {
+    # Why this exists: on 2026-09-22 a mailbox Exchange reports as SharedMailbox (since 09-15) was
+    # ABSENT from getMailboxUsageDetail at D7 and D180 alike. The report only lists mailboxes with
+    # activity, so an untouched shared mailbox - the one most likely to be wasting a license - can
+    # never be found through it.
+
+    It 'prefers the Exchange answer and keeps report-only entries' {
+        $merged = Merge-MailboxTypeMap `
+            -ReportMap   @{ 'a@c.com' = 'user'; 'b@c.com' = 'user' } `
+            -ExchangeMap @{ 'a@c.com' = 'shared'; 'z@c.com' = 'room' }
+
+        $merged['a@c.com'] | Should -Be 'shared'   # Exchange wins on conflict
+        $merged['b@c.com'] | Should -Be 'user'     # report-only entry survives
+        $merged['z@c.com'] | Should -Be 'room'     # Exchange-only entry is added
+    }
+
+    It 'handles either side being empty' {
+        (Merge-MailboxTypeMap -ReportMap @{} -ExchangeMap @{ 'a@c.com' = 'shared' })['a@c.com'] | Should -Be 'shared'
+        (Merge-MailboxTypeMap -ReportMap @{ 'a@c.com' = 'user' } -ExchangeMap @{})['a@c.com'] | Should -Be 'user'
+        (Merge-MailboxTypeMap -ReportMap @{} -ExchangeMap @{}).Count | Should -Be 0
+    }
+
+    It 'degrades to the usage report when ExchangeOnlineManagement is absent' {
+        Mock -CommandName Test-ExchangeOnlineModulePresent -MockWith { $false }
+
+        $result = Get-MailboxTypeMapFromExchange
+
+        $result.ok | Should -BeFalse
+        $result.map.Count | Should -Be 0
+        $result.note | Should -Match 'ExchangeOnlineManagement'
+    }
+
+    It 'is opt-in, so the default run keeps one sign-in and Graph-only scopes' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $src | Should -Match '\[switch\]\$UseExchangeOnline'
+        $src | Should -Match 'if \(\$UseExchangeOnline\)'
+    }
+
+    It 'only ever reads from Exchange' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $src | Should -Not -Match '(?m)^\s*(Set|New|Remove|Disable|Enable)-(EXO)?Mailbox'
+    }
+}
+
+Describe 'An unreadable mailbox type is never reported as zero' {
+    # The paid CLI printed "0 mailbox(es) not converted to shared" when NO type could be read,
+    # which reads as an all-clear on work nobody checked. Same defect, same shape, here.
+    It 'says unknown rather than 0 when nothing could be read' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $src | Should -Match 'unknown \(no mailbox types could be read\)'
+    }
+}
