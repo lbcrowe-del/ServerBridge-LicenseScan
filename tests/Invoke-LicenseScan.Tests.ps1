@@ -221,3 +221,30 @@ Describe 'Upsell text' {
     }
 }
 
+
+Describe 'Device-code sign-in reaches the screen' {
+    # Found 2026-09-22 on Graph SDK 2.38.0: sign-in was IMPOSSIBLE in both commands.
+    #
+    # Connect-MgGraph -UseDeviceCode writes the code to the SUCCESS stream. Both commands call the
+    # helper as `if (-not (Connect-ScanGraph))`, and those parentheses capture that stream - so the
+    # code went into the return value instead of onto the screen. The user saw "a device code will
+    # appear below", then nothing, then a 2-minute timeout.
+    #
+    # 71 tests were green throughout, because this is stream behaviour in an interactive host and
+    # nothing here exercised it. These two assertions are crude, but they sit at the level the
+    # mistake lives at.
+
+    It 'sends the Connect-MgGraph output to the host so the code cannot be captured' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
+        $src | Should -Match 'Connect-MgGraph[^\r\n]*-UseDeviceCode[\s\S]{0,120}?Out-Host'
+    }
+
+    It 'still calls the helper in a way that captures output, which is why Out-Host is required' {
+        # If a future change stops capturing the return value, Out-Host can go - but then this test
+        # should be deleted deliberately rather than silently passing on a stale assumption.
+        foreach ($file in 'Invoke-LicenseScan.ps1', 'Invoke-OffboardingCheck.ps1') {
+            $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) $file)
+            $src | Should -Match 'if \(-not \(Connect-ScanGraph\)\)'
+        }
+    }
+}
