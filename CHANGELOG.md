@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.2 — 2026-09-22
 
 ### Fixed
 - **`-OutputCsv`, `-IncludeGuests` and `-PassThru` were ignored by `Invoke-OffboardingCheck.ps1`.**
