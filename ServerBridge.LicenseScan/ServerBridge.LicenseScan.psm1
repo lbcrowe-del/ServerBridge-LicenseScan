@@ -93,6 +93,13 @@ function Invoke-OffboardingCheck {
     .PARAMETER IncludeGuests
         Also include guest (external) users. Off by default.
 
+    .PARAMETER UseExchangeOnline
+        EXPERIMENTAL. Read mailbox types from Exchange Online rather than Microsoft's usage report.
+        The report only covers mailboxes that have had ACTIVITY, so a shared mailbox nobody has
+        touched is missing from it entirely - and that is the one most likely to be wasting a
+        license. Costs a second sign-in and needs ExchangeOnlineManagement installed. Read-only,
+        and it falls back to the usage report if it doesn't work.
+
     .PARAMETER PassThru
         Also return the finding objects to the pipeline.
 
@@ -102,6 +109,9 @@ function Invoke-OffboardingCheck {
 
     .EXAMPLE
         Invoke-OffboardingCheck -InactiveDays 30 -OutputCsv C:\reports\leavers.csv
+
+    .EXAMPLE
+        Invoke-OffboardingCheck -UseExchangeOnline
 
     .LINK
         https://github.com/lbcrowe-del/ServerBridge-LicenseScan
@@ -118,11 +128,13 @@ function Invoke-OffboardingCheck {
 
         [switch]$IncludeGuests,
 
+        [switch]$UseExchangeOnline,
+
         [switch]$PassThru
     )
 
     Invoke-OffboardingCheckMain -InactiveDays $InactiveDays -OutputCsv $OutputCsv `
-        -IncludeGuests:$IncludeGuests -PassThru:$PassThru
+        -IncludeGuests:$IncludeGuests -UseExchangeOnline:$UseExchangeOnline -PassThru:$PassThru
 }
 
 Export-ModuleMember -Function Invoke-LicenseScan, Invoke-OffboardingCheck

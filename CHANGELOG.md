@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`Invoke-OffboardingCheck -UseExchangeOnline` (experimental).** Reads mailbox types from Exchange
+  Online instead of Microsoft's usage report. Off by default, because it costs a second sign-in and
+  needs `ExchangeOnlineManagement` installed. Read-only, and it falls back to the usage report if it
+  can't connect.
+
+### Fixed
+- **"Mailbox not shared: 0" when no mailbox type could be read.** That zero looked like an all-clear
+  on something nobody had checked. It now reads `unknown`, or shows the count of unreadable ones
+  alongside the real figure.
+
+### Notes
+- Why the Exchange option exists: Microsoft's `getMailboxUsageDetail` only lists mailboxes that have
+  had **activity**. A shared mailbox nobody has touched is missing from it entirely — confirmed on a
+  live tenant on 2026-09-22 against a mailbox Exchange had reported as `SharedMailbox` for a week,
+  at both the 7-day and 180-day windows. That is the mailbox most likely to be wasting a licence, so
+  the report is blind in exactly the place it matters most.
+
 ## 1.2.1 — 2026-09-17
 
 ### Fixed

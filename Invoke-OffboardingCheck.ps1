@@ -38,6 +38,17 @@
 .PARAMETER IncludeGuests
     Include guest (external) users. Off by default.
 
+.PARAMETER UseExchangeOnline
+    EXPERIMENTAL. Read mailbox types from Exchange Online instead of Microsoft's usage report.
+
+    Worth it when you want mailboxes nobody has used. The usage report only lists mailboxes that
+    have had activity, so a shared mailbox sitting untouched is missing from it entirely - which is
+    the mailbox most likely to be wasting a license.
+
+    Costs a SECOND sign-in (Exchange Online is a separate connection from Graph) and needs
+    ExchangeOnlineManagement installed. Read-only, and if it fails the check carries on with the
+    usage report.
+
 .PARAMETER PassThru
     Emit the finding objects to the pipeline in addition to the CSV.
 
@@ -53,9 +64,11 @@
     Delegated scopes requested (all read-only), the same set the license scan uses:
         User.Read.All, Organization.Read.All, AuditLog.Read.All, Reports.Read.All
 
-    The mailbox type comes from Microsoft's mailbox usage report, which lags a day or two and
-    is unavailable when your tenant conceals user names in reports. Both cases are reported
-    rather than guessed.
+    The mailbox type comes from Microsoft's mailbox usage report, which is unavailable when your
+    tenant conceals user names in reports, and which only covers mailboxes that have had
+    ACTIVITY - a mailbox nobody has touched is missing from it entirely, so its type reads
+    "unknown". Use -UseExchangeOnline to read types from Exchange instead (second sign-in).
+    Either way an unreadable type is reported as unknown rather than guessed.
 
     Project: https://github.com/lbcrowe-del/ServerBridge-LicenseScan
     License: MIT
@@ -69,6 +82,8 @@ param(
     [string]$OutputCsv,
 
     [switch]$IncludeGuests,
+
+    [switch]$UseExchangeOnline,
 
     [switch]$PassThru
 )
@@ -180,6 +195,76 @@ function Get-OffboardingRow {
 # Graph I/O (kept in functions so tests can dot-source without a tenant)
 # ---------------------------------------------------------------------------
 
+function Merge-MailboxTypeMap {
+    <#
+    Pure merge of two mailbox-type maps. Exchange wins wherever it has an answer, because it reads
+    Exchange's own directory; the usage report only fills gaps.
+
+    This exists because of a limit found on a live tenant 2026-09-22: getMailboxUsageDetail only
+    lists mailboxes that have HAD ACTIVITY. A shared mailbox nobody has touched is absent from the
+    report entirely - not blank, absent - at D7 and at D180 alike. That is exactly the mailbox worth
+    finding, since an unused licensed shared mailbox is the clearest wasted license there is.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()][AllowNull()][hashtable]$ReportMap,
+        [Parameter()][AllowNull()][hashtable]$ExchangeMap
+    )
+
+    $merged = @{}
+    foreach ($k in @($ReportMap.Keys)) { $merged[$k] = $ReportMap[$k] }
+    foreach ($k in @($ExchangeMap.Keys)) { $merged[$k] = $ExchangeMap[$k] }
+    return $merged
+}
+
+function Test-ExchangeOnlineModulePresent {
+    <# Separate from the call so tests can mock it without Exchange installed. #>
+    [CmdletBinding()] param()
+    return [bool](Get-Module -ListAvailable -Name ExchangeOnlineManagement)
+}
+
+function Get-MailboxTypeMapFromExchange {
+    <#
+    PROTOTYPE (opt-in via -UseExchangeOnline).
+
+    Returns @{ ok=$bool; map=@{ upn(lower) -> label }; note=$string }.
+
+    Get-EXOMailbox reads Exchange's own directory, so it sees every mailbox whether or not anyone
+    has used it - the case the usage report misses. The cost is a SECOND sign-in: Exchange Online is
+    a different token audience from Graph, so this cannot ride on the Graph connection.
+
+    That cost is why this is opt-in rather than the default. Everything here is read-only
+    (Get-EXOMailbox), and a failure degrades to the usage report instead of failing the check.
+    #>
+    [CmdletBinding()] param()
+
+    if (-not (Test-ExchangeOnlineModulePresent)) {
+        return @{ ok = $false; map = @{}; note = 'ExchangeOnlineManagement is not installed (Install-Module ExchangeOnlineManagement -Scope CurrentUser).' }
+    }
+
+    try {
+        Import-Module ExchangeOnlineManagement -ErrorAction Stop
+        Write-Host '  a second sign-in is needed for Exchange Online (read-only)...' -ForegroundColor DarkGray
+        Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop | Out-Null
+    } catch {
+        return @{ ok = $false; map = @{}; note = "Exchange Online sign-in failed: $($_.Exception.Message)" }
+    }
+
+    try {
+        $map = @{}
+        foreach ($mb in @(Get-EXOMailbox -ResultSize Unlimited -Properties RecipientTypeDetails -ErrorAction Stop)) {
+            $upn = $mb.UserPrincipalName
+            if (-not $upn) { continue }
+            $map[$upn.ToLower()] = Get-MailboxTypeLabel -RecipientType $mb.RecipientTypeDetails
+        }
+        return @{ ok = $true; map = $map; note = $null }
+    } catch {
+        return @{ ok = $false; map = @{}; note = "Reading mailboxes failed: $($_.Exception.Message)" }
+    } finally {
+        Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+    }
+}
+
 function Get-MailboxTypeMap {
     <#
     Returns @{ ok=$bool; map=@{ upn(lower) -> recipient type label } }.
@@ -245,6 +330,7 @@ function Invoke-OffboardingCheckMain {
         [int]$InactiveDays,
         [string]$OutputCsv,
         [switch]$IncludeGuests,
+        [switch]$UseExchangeOnline,
         [switch]$PassThru
     )
 
@@ -296,6 +382,18 @@ function Invoke-OffboardingCheckMain {
         Write-Host "Mailbox report unavailable: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 
+    # Opt-in: ask Exchange directly, which also sees mailboxes that have never been used.
+    if ($UseExchangeOnline) {
+        $exo = Get-MailboxTypeMapFromExchange
+        if ($exo.ok) {
+            $mailboxMap = Merge-MailboxTypeMap -ReportMap $mailboxMap -ExchangeMap $exo.map
+            Write-Host ("  mailbox types read from Exchange Online ({0} mailbox(es))" -f $exo.map.Count) -ForegroundColor DarkGray
+        } else {
+            Write-Host "Exchange Online check skipped: $($exo.note)" -ForegroundColor Yellow
+            Write-Host 'Falling back to the usage report, which cannot see mailboxes with no activity.' -ForegroundColor DarkGray
+        }
+    }
+
     # Narrow to leaver-looking accounts BEFORE the per-user group lookup: one Graph call each.
     $cutoff = (Get-Date).AddDays(-1 * $InactiveDays)
     $candidates = foreach ($u in $rawUsers) {
@@ -340,9 +438,18 @@ function Invoke-OffboardingCheckMain {
 
     $stillLicensed = @($rows | Where-Object { $_.LicenseCount -gt 0 }).Count
     $notShared = @($rows | Where-Object { $_.MailboxType -eq 'user' }).Count
+    $typeUnknown = @($rows | Where-Object { $_.MailboxType -eq 'unknown' }).Count
     Write-Host ("  Accounts to review     : {0:N0}" -f $rows.Count) -ForegroundColor White
     Write-Host ("  Still holding licenses : {0:N0}" -f $stillLicensed) -ForegroundColor Yellow
-    Write-Host ("  Mailbox not shared     : {0:N0}" -f $notShared) -ForegroundColor Yellow
+    # Never print a bare 0 for a count nobody could read: "0 mailboxes not shared" reads as an
+    # all-clear on work that was never checked. Same false zero fixed in the paid CLI 2026-09-22.
+    if ($typeUnknown -eq $rows.Count -and $rows.Count -gt 0) {
+        Write-Host '  Mailbox not shared     : unknown (no mailbox types could be read)' -ForegroundColor Yellow
+    } elseif ($typeUnknown -gt 0) {
+        Write-Host ("  Mailbox not shared     : {0:N0} ({1:N0} unknown)" -f $notShared, $typeUnknown) -ForegroundColor Yellow
+    } else {
+        Write-Host ("  Mailbox not shared     : {0:N0}" -f $notShared) -ForegroundColor Yellow
+    }
     Write-Host ''
 
     if (-not $OutputCsv) {
@@ -375,5 +482,5 @@ function Invoke-OffboardingCheckMain {
 # Run unless dot-sourced (e.g. by Pester tests, where InvocationName is '.').
 if ($MyInvocation.InvocationName -ne '.') {
     Invoke-OffboardingCheckMain -InactiveDays $InactiveDays -OutputCsv $OutputCsv `
-        -IncludeGuests:$IncludeGuests -PassThru:$PassThru
+        -IncludeGuests:$IncludeGuests -UseExchangeOnline:$UseExchangeOnline -PassThru:$PassThru
 }

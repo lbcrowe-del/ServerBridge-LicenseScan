@@ -62,9 +62,17 @@ Describe 'ServerBridge.LicenseScan module' {
     }
 
     It 'gives Invoke-OffboardingCheck the same parameters as its standalone script' {
-        $params = (Get-Command Invoke-OffboardingCheck).Parameters.Keys
-        foreach ($name in 'InactiveDays', 'OutputCsv', 'IncludeGuests', 'PassThru') {
-            $params | Should -Contain $name
+        # Derived from the script, not hardcoded. The old version listed four names by hand, so it
+        # passed happily while the module wrapper was missing -UseExchangeOnline altogether
+        # (found 2026-09-22): a parity test that cannot see a new parameter is not a parity test.
+        $scriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1'
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$null, [ref]$null)
+        $scriptParams = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+
+        $scriptParams.Count | Should -BeGreaterThan 0
+        $moduleParams = (Get-Command Invoke-OffboardingCheck).Parameters.Keys
+        foreach ($name in $scriptParams) {
+            $moduleParams | Should -Contain $name
         }
     }
 
