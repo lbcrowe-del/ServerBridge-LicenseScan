@@ -1,6 +1,6 @@
 @{
     RootModule        = 'ServerBridge.LicenseScan.psm1'
-    ModuleVersion     = '1.2.1'
+    ModuleVersion     = '1.2.2'
     GUID              = '24b0a1fa-4b98-4900-99db-b0f3c9f960cf'
     Author            = 'Lee Crowe Software Solutions LLC'
     CompanyName       = 'Lee Crowe Software Solutions LLC'
@@ -32,7 +32,7 @@
                              'Windows', 'Linux', 'MacOS')
             LicenseUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan'
-            ReleaseNotes = 'Accuracy fix: both commands now read non-interactive and successful sign-ins as well as interactive ones. Reading only interactive sign-ins made people who use Outlook or Teams on a phone look dormant, because those clients sign in on the user''s behalf - so an active user could be reported as a licence worth removing. Thanks to robofski on r/PowerShell for reporting it. See CHANGELOG.md on GitHub for earlier changes.'
+            ReleaseNotes = 'Important fix: sign-in was impossible on Microsoft Graph PowerShell SDK 2.38. Both commands printed "a device code will appear below", then no code, then timed out after two minutes. If you hit that, nothing was wrong on your side. Also fixes -OutputCsv, -IncludeGuests and -PassThru being ignored when Invoke-OffboardingCheck.ps1 was run as a script, and a summary line that said "0 mailboxes not converted to shared" when no mailbox type could be read at all - it now says unknown. New, experimental: Invoke-OffboardingCheck -UseExchangeOnline reads mailbox types from Exchange Online, which unlike Microsoft''s usage report can see mailboxes that have never been used. Off by default; it needs a second sign-in. See CHANGELOG.md on GitHub for earlier changes.'
         }
     }
 }

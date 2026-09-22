@@ -13,8 +13,8 @@ AfterAll {
 }
 
 Describe 'ServerBridge.LicenseScan module' {
-    It 'has a valid manifest at version 1.2.1' {
-        (Test-ModuleManifest -Path $manifestPath).Version.ToString() | Should -Be '1.2.1'
+    It 'has a valid manifest at version 1.2.2' {
+        (Test-ModuleManifest -Path $manifestPath).Version.ToString() | Should -Be '1.2.2'
     }
 
     It 'exports exactly the two public commands' {
