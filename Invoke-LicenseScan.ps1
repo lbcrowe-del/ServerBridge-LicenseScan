@@ -339,7 +339,13 @@ function Connect-ScanGraph {
     while (-not $signedIn) {
         try {
             Write-Host 'Signing you in. A device code will appear below - enter it within 2 minutes.' -ForegroundColor Cyan
-            Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop
+            # Out-Host, not a bare call. Connect-MgGraph -UseDeviceCode writes the code to the
+            # SUCCESS stream, and both commands invoke this function as `if (-not (Connect-ScanGraph))`
+            # - which captures that stream. The code then lands in this function's return value
+            # instead of on screen, so the user sees "a device code will appear below", no code, and
+            # a 2-minute timeout. Sign-in was impossible. Found 2026-09-22 on Graph SDK 2.38.0.
+            Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop |
+                Out-Host
             $signedIn = $true
         } catch {
             $message = "$($_.Exception.Message)"

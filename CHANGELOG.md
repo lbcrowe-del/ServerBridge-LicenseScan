@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+- **Sign-in was impossible on Microsoft Graph PowerShell SDK 2.38.** Both commands printed "a device
+  code will appear below", then no code, then timed out after two minutes. `Connect-MgGraph
+  -UseDeviceCode` writes the code to PowerShell's *success* stream, and both commands called the
+  sign-in helper in a way that captured that stream — so the code ended up in a return value instead
+  of on your screen. If you hit this, nothing was wrong on your side and nothing you could change
+  would have helped.
+
 ### Added
 - **`Invoke-OffboardingCheck -UseExchangeOnline` (experimental).** Reads mailbox types from Exchange
   Online instead of Microsoft's usage report. Off by default, because it costs a second sign-in and
