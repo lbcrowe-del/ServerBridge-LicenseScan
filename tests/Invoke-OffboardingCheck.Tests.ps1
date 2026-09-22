@@ -233,3 +233,29 @@ Describe 'An unreadable mailbox type is never reported as zero' {
         $src | Should -Match 'unknown \(no mailbox types could be read\)'
     }
 }
+
+Describe 'Caller parameters survive the shared dot-source' {
+    # Invoke-LicenseScan.ps1 has its own param() block (InactiveDays, OutputCsv, IncludeGuests,
+    # PassThru). Dot-sourcing it runs it in THIS script's scope, re-declaring those four at their
+    # defaults and wiping what the caller passed. Found 2026-09-22 when a run ignored -OutputCsv and
+    # wrote to the default path instead; -IncludeGuests was silently doing nothing too.
+    It 'snapshots the caller arguments before dot-sourcing the shared script' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $snapshotAt = $src.IndexOf('$callerArgs = @{')
+        $dotSourceAt = $src.IndexOf('. $sharedPath')
+
+        $snapshotAt | Should -BeGreaterThan 0
+        $dotSourceAt | Should -BeGreaterThan 0
+        $snapshotAt | Should -BeLessThan $dotSourceAt
+    }
+
+    It 'passes the snapshot to the entry point, not the clobbered variables' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        # The INVOCATION at the bottom of the script, not the function definition above it.
+        $call = [regex]::Match($src, "InvocationName -ne '\.'\)\s*\{[\s\S]*?\n\}").Value
+
+        $call | Should -Match '\$callerArgs\.OutputCsv'
+        $call | Should -Match '\$callerArgs\.IncludeGuests'
+        $call | Should -Not -Match '-OutputCsv \$OutputCsv'
+    }
+}
