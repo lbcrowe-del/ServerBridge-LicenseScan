@@ -1,6 +1,6 @@
 @{
     RootModule        = 'ServerBridge.LicenseScan.psm1'
-    ModuleVersion     = '1.2.2'
+    ModuleVersion     = '1.3.0'
     GUID              = '24b0a1fa-4b98-4900-99db-b0f3c9f960cf'
     Author            = 'Lee Crowe Software Solutions LLC'
     CompanyName       = 'Lee Crowe Software Solutions LLC'
@@ -32,7 +32,7 @@
                              'Windows', 'Linux', 'MacOS')
             LicenseUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan'
-            ReleaseNotes = 'Important fix: sign-in was impossible on Microsoft Graph PowerShell SDK 2.38. Both commands printed "a device code will appear below", then no code, then timed out after two minutes. If you hit that, nothing was wrong on your side. Also fixes -OutputCsv, -IncludeGuests and -PassThru being ignored when Invoke-OffboardingCheck.ps1 was run as a script, and a summary line that said "0 mailboxes not converted to shared" when no mailbox type could be read at all - it now says unknown. New, experimental: Invoke-OffboardingCheck -UseExchangeOnline reads mailbox types from Exchange Online, which unlike Microsoft''s usage report can see mailboxes that have never been used. Off by default; it needs a second sign-in. See CHANGELOG.md on GitHub for earlier changes.'
+            ReleaseNotes = 'Changed: failed sign-in attempts no longer make a dormant account look active. lastSignInDateTime records attempts including failures, so an account being password-sprayed kept a fresh timestamp and stayed licensed without review. Both commands now read the newest of the non-interactive and successful timestamps, with a fallback if lastSuccessfulSignInDateTime is empty across a whole tenant. Affects Entra ID P1/P2 tenants only. Raised by iRyan23 on r/entra. New (experimental): Invoke-OffboardingCheck -UseExchangeOnline reads mailbox types from Exchange Online, which unlike Microsoft''s usage report can see mailboxes that have never been used. Off by default; needs a second sign-in. Fixed: signing in with a personal Microsoft account now says to use your work account instead of suggesting you check permissions. See CHANGELOG.md on GitHub.'
         }
     }
 }
