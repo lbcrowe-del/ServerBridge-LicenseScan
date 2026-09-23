@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Signing in with a personal Microsoft account gave confusing advice.** It failed with "This API is
+  not supported for MSA accounts" and then suggested checking the permissions you'd consented to —
+  which were fine. Both commands now say what's actually wrong: use your work or school account. The
+  sign-in page reuses whatever Microsoft session your browser already has, so this is easy to hit
+  without realising.
+
 ## 1.2.2 — 2026-09-22
 
 ### Fixed

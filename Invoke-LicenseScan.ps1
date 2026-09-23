@@ -326,6 +326,34 @@ function Test-GraphSdkPresent {
     return $false
 }
 
+function Show-GraphReadFailure {
+    <#
+    One place for "the tenant read failed", so both commands say the same thing.
+
+    Splits out the personal-account case. Microsoft returns "This API is not supported for MSA
+    accounts" when someone signs in with an outlook.com/hotmail.com/personal account: there is no
+    directory behind it, so every directory call fails. Telling that person to check their consented
+    scopes sends them somewhere useless - the permissions are fine, the account is wrong.
+
+    Easy mistake rather than a careless one: the sign-in page reuses whatever Microsoft session the
+    browser already has, so a personal account gets picked silently. Hit 2026-09-23.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Message)
+
+    if ($Message -match 'MSA account') {
+        Write-Host ''
+        Write-Host "You're signed in with a personal Microsoft account, which has no organization behind it." -ForegroundColor Yellow
+        Write-Host 'Sign in again with your work or school account (the one on your company domain).' -ForegroundColor Yellow
+        Write-Host 'If the sign-in page skips the account picker it is reusing a session you already had -' -ForegroundColor DarkGray
+        Write-Host 'choose "Use another account", or sign in from a private browser window.' -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host "Graph read failed: $Message" -ForegroundColor Red
+    Write-Host 'Confirm you consented to User.Read.All, Organization.Read.All, AuditLog.Read.All and Reports.Read.All.' -ForegroundColor Yellow
+}
+
 function Connect-ScanGraph {
     <#
     Device-code sign-in with the read-only scopes, offering a fresh code when Microsoft's
@@ -441,8 +469,7 @@ function Invoke-LicenseScanMain {
         $rawUsers = Get-MgUser -All -Property $select -Filter 'assignedLicenses/$count ne 0' `
             -ConsistencyLevel eventual -CountVariable userCount -ErrorAction Stop
     } catch {
-        Write-Host "Graph read failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host 'Confirm you consented to User.Read.All, Organization.Read.All, AuditLog.Read.All and Reports.Read.All.' -ForegroundColor Yellow
+        Show-GraphReadFailure -Message "$($_.Exception.Message)"
         Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
         return
     }

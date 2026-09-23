@@ -248,3 +248,37 @@ Describe 'Device-code sign-in reaches the screen' {
         }
     }
 }
+
+Describe 'A personal Microsoft account is named as the cause' {
+    # Hit 2026-09-23: signing in with a personal account returns "This API is not supported for MSA
+    # accounts". The old handler told the user to check consented scopes - which were fine. That
+    # sends someone to the consent screen to fix an account problem.
+    It 'says which account to use instead, and does not mention permissions' {
+        $out = Show-GraphReadFailure -Message 'This API is not supported for MSA accounts (no addressUrl for Microsoft.DirectoryServices,False).' 6>&1 |
+            Out-String
+
+        $out | Should -Match 'personal Microsoft account'
+        $out | Should -Match 'work or school account'
+        $out | Should -Not -Match 'User\.Read\.All'
+    }
+
+    It 'still gives the permissions hint for an ordinary Graph failure' {
+        $out = Show-GraphReadFailure -Message 'Insufficient privileges to complete the operation.' 6>&1 | Out-String
+
+        $out | Should -Match 'Graph read failed'
+        $out | Should -Match 'User\.Read\.All'
+        $out | Should -Not -Match 'personal Microsoft account'
+    }
+
+    It 'is shared by both commands rather than copied' {
+        foreach ($file in 'Invoke-LicenseScan.ps1', 'Invoke-OffboardingCheck.ps1') {
+            $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) $file)
+            $src | Should -Match 'Show-GraphReadFailure -Message'
+        }
+        # Defined once.
+        $scan = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
+        $offb = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-OffboardingCheck.ps1')
+        $offb | Should -Not -Match 'function Show-GraphReadFailure'
+        ([regex]::Matches($scan, 'function Show-GraphReadFailure')).Count | Should -Be 1
+    }
+}
