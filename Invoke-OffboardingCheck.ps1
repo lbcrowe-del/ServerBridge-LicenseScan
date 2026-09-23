@@ -367,8 +367,7 @@ function Invoke-OffboardingCheckMain {
         $select = 'id,displayName,userPrincipalName,userType,accountEnabled,assignedLicenses'
         $rawUsers = Get-MgUser -All -Property $select -ErrorAction Stop
     } catch {
-        Write-Host "Graph read failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host 'Confirm you consented to User.Read.All, Organization.Read.All, AuditLog.Read.All and Reports.Read.All.' -ForegroundColor Yellow
+        Show-GraphReadFailure -Message "$($_.Exception.Message)"
         Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
         return
     }
