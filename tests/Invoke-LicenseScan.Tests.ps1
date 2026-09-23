@@ -282,3 +282,87 @@ Describe 'A personal Microsoft account is named as the cause' {
         ([regex]::Matches($scan, 'function Show-GraphReadFailure')).Count | Should -Be 1
     }
 }
+
+Describe 'Tenant-wide sign-in guard' {
+    # 2026-09-23: stop reading lastSignInDateTime where possible, because it logs FAILED attempts -
+    # so password-spraying a dormant account keeps it looking active, licensed and unreviewed.
+    # Raised by iRyan23 on r/entra. The guard exists because dropping a timestamp errs toward
+    # flagging people who are still working, which is the expensive direction.
+    BeforeAll {
+        $script:old = [datetime]'2024-01-01'
+        $script:recent = [datetime]'2026-09-01'
+        # Defined here, not in the Describe body: Pester 5 runs Describe at discovery time, so a
+        # function declared there is gone by the time an It block executes.
+        function script:New-Acct {
+            param($Upn, $Interactive, $NonInteractive, $Successful)
+            [pscustomobject]@{
+                Upn = $Upn; Interactive = $Interactive
+                NonInteractive = $NonInteractive; Successful = $Successful
+            }
+        }
+    }
+
+    It 'ignores interactive attempts once the tenant proves it populates the successful timestamp' {
+        $map = Get-TenantSignInMap -Accounts @(
+            (New-Acct -Upn 'active@c.com' -Successful $recent),
+            (New-Acct -Upn 'sprayed@c.com' -Interactive $recent -Successful $old)
+        )
+
+        $map['sprayed@c.com'] | Should -Be $old
+    }
+
+    It 'reports an account with only failed attempts as never active' {
+        $map = Get-TenantSignInMap -Accounts @(
+            (New-Acct -Upn 'real@c.com' -Successful $recent),
+            (New-Acct -Upn 'sprayed@c.com' -Interactive $recent)
+        )
+
+        $map['sprayed@c.com'] | Should -BeNullOrEmpty
+    }
+
+    It 'still counts non-interactive activity, so mobile-only users are not dormant' {
+        # robofski's bug must stay fixed - that direction costs someone their access.
+        $map = Get-TenantSignInMap -Accounts @(
+            (New-Acct -Upn 'desk@c.com' -Successful $old),
+            (New-Acct -Upn 'phone@c.com' -NonInteractive $recent)
+        )
+
+        $map['phone@c.com'] | Should -Be $recent
+    }
+
+    It 'falls back to the interactive timestamp when no account has a successful one' {
+        # THE GUARD: a tenant-wide blank means the property is not being populated here.
+        $map = Get-TenantSignInMap -Accounts @(
+            (New-Acct -Upn 'a@c.com' -Interactive $recent),
+            (New-Acct -Upn 'b@c.com' -Interactive $old)
+        )
+
+        $map['a@c.com'] | Should -Be $recent
+        $map['b@c.com'] | Should -Be $old
+    }
+
+    It 'treats one populated successful timestamp as proof for the whole tenant' {
+        Test-TenantPopulatesSuccessfulSignIn -Accounts @(
+            (New-Acct -Upn 'a@c.com' -Interactive $recent)
+        ) | Should -BeFalse
+
+        Test-TenantPopulatesSuccessfulSignIn -Accounts @(
+            (New-Acct -Upn 'a@c.com' -Interactive $recent),
+            (New-Acct -Upn 'b@c.com' -Successful $old)
+        ) | Should -BeTrue
+    }
+
+    It 'falls back rather than assuming on an empty tenant' {
+        Test-TenantPopulatesSuccessfulSignIn -Accounts @() | Should -BeFalse
+    }
+
+    It 'lower-cases keys and skips blank UPNs' {
+        $map = Get-TenantSignInMap -Accounts @(
+            (New-Acct -Upn 'Mixed@Case.com' -Successful $recent),
+            (New-Acct -Upn '   ' -Successful $recent)
+        )
+
+        $map.Count | Should -Be 1
+        $map['mixed@case.com'] | Should -Be $recent
+    }
+}
