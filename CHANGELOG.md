@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+- **Failed sign-in attempts no longer make a dormant account look active.** `lastSignInDateTime`
+  records attempts, including failures — so an account being password-sprayed kept a fresh
+  timestamp, looked active, and stayed licensed without anyone reviewing it. The account you'd most
+  want flagged was the one being hidden. Both commands now take the newest of the non-interactive
+  and successful timestamps instead. Raised by **iRyan23** on r/entra.
+- Safety net for the above: if `lastSuccessfulSignInDateTime` is empty for *every* account in a
+  tenant, the old reading is used instead. A tenant-wide blank means Microsoft isn't populating that
+  property there, and without it the stricter reading would start flagging people who are still
+  working.
+
 ### Fixed
 - **Signing in with a personal Microsoft account gave confusing advice.** It failed with "This API is
   not supported for MSA accounts" and then suggested checking the permissions you'd consented to —

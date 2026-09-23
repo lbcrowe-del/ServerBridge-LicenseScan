@@ -209,6 +209,59 @@ function Get-NewestSignIn {
     return (@($dates) | Sort-Object -Descending)[0]
 }
 
+function Test-TenantPopulatesSuccessfulSignIn {
+    <#
+    $true when at least one account in the tenant has lastSuccessfulSignInDateTime set.
+
+    That one populated value is what proves Microsoft is filling the property in this tenant. An
+    empty tenant returns $false: with nothing to go on, fall back to the wider reading rather than
+    assume.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][object[]]$Accounts)
+
+    foreach ($a in @($Accounts | Where-Object { $null -ne $_ })) {
+        if ($a.Successful) { return $true }
+    }
+    return $false
+}
+
+function Get-TenantSignInMap {
+    <#
+    Last activity per account (keyed by lower-case UPN), with the tenant-wide guard applied.
+
+    Takes objects with Upn, Interactive, NonInteractive and Successful. Two passes on purpose:
+    whether lastSuccessfulSignInDateTime can be trusted is a fact about the TENANT, so it cannot be
+    decided one user at a time.
+
+    2026-09-23: lastSignInDateTime is no longer read when it can be avoided. It logs FAILED
+    attempts, so someone password-spraying a dormant account keeps its timestamp fresh - the account
+    looks active, keeps its licence, and never gets reviewed. The account most worth surfacing is
+    the one that gets hidden. Raised by iRyan23 on r/entra.
+
+    THE GUARD: dropping a timestamp can only make accounts look LESS active, which errs toward
+    telling someone to strip access from a person still working - the expensive mistake, and
+    robofski's bug from the other direction. That risk only exists if lastSuccessfulSignInDateTime
+    is not populated at all, so the stricter reading is used only when some account has it set.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][object[]]$Accounts)
+
+    $accountList = @($Accounts | Where-Object { $null -ne $_ })
+    $trustSuccessful = Test-TenantPopulatesSuccessfulSignIn -Accounts $accountList
+
+    $map = @{}
+    foreach ($a in $accountList) {
+        if ([string]::IsNullOrWhiteSpace($a.Upn)) { continue }
+        $map[$a.Upn.ToLower()] = if ($trustSuccessful) {
+            Get-NewestSignIn -Interactive $null -NonInteractive $a.NonInteractive -Successful $a.Successful
+        } else {
+            Get-NewestSignIn -Interactive $a.Interactive -NonInteractive $a.NonInteractive -Successful $a.Successful
+        }
+    }
+    return $map
+}
+
 # ---------------------------------------------------------------------------
 # Graph I/O (kept in functions so tests can dot-source without a tenant)
 # ---------------------------------------------------------------------------
@@ -225,15 +278,19 @@ function Get-SignInActivityMap {
         $users = Get-MgUser -All -Property 'userPrincipalName,signInActivity' `
             -Filter 'assignedLicenses/$count ne 0' -ConsistencyLevel eventual `
             -CountVariable siaCount -ErrorAction Stop
-        foreach ($u in $users) {
+        # Collect the raw timestamps first and judge afterwards: whether lastSuccessfulSignInDateTime
+        # can be trusted is a fact about the TENANT - see Get-TenantSignInMap.
+        $accounts = foreach ($u in $users) {
             if ($u.UserPrincipalName) {
-                # All three timestamps, not just the interactive one - see Get-NewestSignIn.
-                $map[$u.UserPrincipalName.ToLower()] = Get-NewestSignIn `
-                    -Interactive $u.SignInActivity.LastSignInDateTime `
-                    -NonInteractive $u.SignInActivity.LastNonInteractiveSignInDateTime `
-                    -Successful $u.SignInActivity.LastSuccessfulSignInDateTime
+                [pscustomobject]@{
+                    Upn            = $u.UserPrincipalName
+                    Interactive    = $u.SignInActivity.LastSignInDateTime
+                    NonInteractive = $u.SignInActivity.LastNonInteractiveSignInDateTime
+                    Successful     = $u.SignInActivity.LastSuccessfulSignInDateTime
+                }
             }
         }
+        $map = Get-TenantSignInMap -Accounts @($accounts)
         return @{ ok = $true; map = $map }
     } catch {
         $msg = "$($_.Exception.Message)"
