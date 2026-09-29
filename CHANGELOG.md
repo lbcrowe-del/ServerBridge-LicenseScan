@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — 2026-09-29
 
 ### Added
 - **The offboarding check now shows what the leavers are still costing** — a yearly total beside the

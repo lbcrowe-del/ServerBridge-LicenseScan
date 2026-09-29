@@ -1,6 +1,6 @@
 @{
     RootModule        = 'ServerBridge.LicenseScan.psm1'
-    ModuleVersion     = '1.3.0'
+    ModuleVersion     = '1.4.0'
     GUID              = '24b0a1fa-4b98-4900-99db-b0f3c9f960cf'
     Author            = 'Lee Crowe Software Solutions LLC'
     CompanyName       = 'Lee Crowe Software Solutions LLC'
@@ -32,7 +32,7 @@
                              'Windows', 'Linux', 'MacOS')
             LicenseUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan'
-            ReleaseNotes = 'Changed: failed sign-in attempts no longer make a dormant account look active. lastSignInDateTime records attempts including failures, so an account being password-sprayed kept a fresh timestamp and stayed licensed without review. Both commands now read the newest of the non-interactive and successful timestamps, with a fallback if lastSuccessfulSignInDateTime is empty across a whole tenant. Affects Entra ID P1/P2 tenants only. Raised by iRyan23 on r/entra. New (experimental): Invoke-OffboardingCheck -UseExchangeOnline reads mailbox types from Exchange Online, which unlike Microsoft''s usage report can see mailboxes that have never been used. Off by default; needs a second sign-in. Fixed: signing in with a personal Microsoft account now says to use your work account instead of suggesting you check permissions. See CHANGELOG.md on GitHub.'
+            ReleaseNotes = 'Both commands now say whether the paid Auditor is actually worth it for your tenant, using the numbers the scan just produced. If the recoverable spend is less than the tool costs, they say so and tell you to keep your money - no link. If there is nothing to recover, they say there is nothing worth paying for. New: the offboarding check shows what the leavers are still costing per year, both in the summary and as an AnnualCost column in the CSV - note this adds a column, which matters if you parse the CSV by position. See CHANGELOG.md on GitHub for earlier changes.'
         }
     }
 }
