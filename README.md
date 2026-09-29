@@ -21,9 +21,14 @@ No app registration. No agent. Nothing stored. Neither command ever changes anyt
 1. Reads your subscribed licenses (SKUs) and who each one is assigned to.
 2. Looks up each licensed user's last activity:
    - **directory sign-in activity** if your tenant has Microsoft Entra ID P1 or P2 — the most recent
-     of Microsoft's three timestamps: successful, interactive, and **non-interactive**. That last one
-     matters: someone who lives in Outlook or Teams on a phone may have no interactive sign-in at
-     all, and reading only interactive sign-ins would call them dormant.
+     of `lastSuccessfulSignInDateTime` and `lastNonInteractiveSignInDateTime`. The non-interactive
+     one matters: someone who lives in Outlook or Teams on a phone may have no interactive sign-in
+     at all, and reading only interactive sign-ins would call them dormant.
+
+     `lastSignInDateTime` is deliberately **not** read. It records sign-in *attempts*, including
+     failures — so an account being password-sprayed keeps a fresh timestamp, looks active, and
+     quietly keeps its licence. The exception: if `lastSuccessfulSignInDateTime` is empty across
+     your whole tenant, Microsoft isn't populating it there, and all three are read instead.
    - **Microsoft 365 usage reports** if it doesn't (no premium license needed).
 3. Flags as dormant:
    - accounts with no activity in the last **90 days** (change with `-InactiveDays`), and
@@ -66,6 +71,7 @@ This finds accounts that **look like leavers** — disabled, or no activity for 
 | `Licenses` | paid licenses still assigned (free SKUs aren't counted) |
 | `GroupCount` | how many groups and directory roles it still belongs to |
 | `MailboxType` | `user` means nobody converted it to a shared mailbox |
+| `AnnualCost` | what that account's paid licences cost per year |
 
 ```
 UserPrincipalName        Reason   Licenses       GroupCount MailboxType
@@ -75,18 +81,36 @@ a.jones@contoso.com      inactive SPE_E5                  3 user
 temp.contractor@cont.com disabled                         1 shared
 
   Accounts to review     : 3
-  Still holding licenses : 2
+  Still holding licenses : 2   ($1,368 / year)
   Mailbox not shared     : 2
 ```
 
 One row per person, not per license, because offboarding is a per-person job. The full list goes to
 `offboarding-check_<tenant>_<date>.csv`.
 
-**Two honest limits.** Mailbox type comes from Microsoft's mailbox usage report, which lags a day or
-two — a mailbox converted this morning still reads as `user`. And if your tenant conceals user names
-in reports, mailbox type reads `unknown` for everyone rather than guessing. Group counts come from
-each account's direct memberships; if the count can't be read it stays blank instead of showing `0`,
+**Two honest limits.** Mailbox type comes from Microsoft's mailbox usage report, which lists only
+mailboxes that have **had activity** — so a shared mailbox nobody has touched doesn't appear in it
+at all, at any age, and its type reads `unknown` rather than being guessed at. That's the mailbox
+most likely to be wasting a licence, so if you need those, use `-UseExchangeOnline` (below). The
+same `unknown` appears if your tenant conceals user names in reports. Group counts come from each
+account's direct memberships; if the count can't be read it stays blank instead of showing `0`,
 because `0` would wrongly suggest the account is clean.
+
+### Reading mailbox types from Exchange instead
+
+```powershell
+Invoke-OffboardingCheck -UseExchangeOnline
+```
+
+Reads mailbox types from Exchange Online rather than the usage report, so it sees every mailbox
+whether or not anyone has used it. Off by default because it needs a **second sign-in** (Exchange is
+a separate connection from Graph) and the `ExchangeOnlineManagement` module:
+
+```powershell
+Install-Module ExchangeOnlineManagement -Scope CurrentUser
+```
+
+Read-only, and if it can't connect the check carries on with the usage report rather than failing.
 
 ## Requirements
 
@@ -176,9 +200,9 @@ https://login.microsoft.com/device in your browser before you start the scan.
 ### Does it count people who only use Outlook or Teams on their phone?
 
 Yes. Those clients sign in *on your behalf*, which Microsoft records as a **non-interactive** sign-in
-in a separate field from interactive ones. The scan takes the most recent of all three timestamps
-(`lastSuccessfulSignInDateTime`, `lastSignInDateTime`, `lastNonInteractiveSignInDateTime`), so a
-mobile-only user counts as active.
+in a separate field from interactive ones. The scan takes the most recent of
+`lastSuccessfulSignInDateTime` and `lastNonInteractiveSignInDateTime`, so a mobile-only user counts
+as active.
 
 It errs deliberately toward "active": missing a dormant seat costs you a saving, but wrongly flagging
 an active person could cost them their mailbox.
