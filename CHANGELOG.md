@@ -2,7 +2,14 @@
 
 ## Unreleased
 
+### Added
+- **The offboarding check now shows what the leavers are still costing** — a yearly total beside the
+  count, and an `AnnualCost` column in the CSV. A list of accounts without a number on it made you
+  work the cost out from SKU names.
+
 ### Changed
+- **The offboarding check now says whether the paid tool is worth it for your tenant**, where before
+  it said nothing about it at all. Below the Team price it says so and shows no link.
 - **The line about the paid Auditor now depends on what the scan actually found.** If the
   recoverable spend is less than the Auditor costs, it says so and tells you to keep your money —
   no link. If there's nothing recoverable at all, it says there's nothing here worth paying for.

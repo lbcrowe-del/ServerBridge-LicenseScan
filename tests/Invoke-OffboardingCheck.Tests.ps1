@@ -259,3 +259,59 @@ Describe 'Caller parameters survive the shared dot-source' {
         $call | Should -Not -Match '-OutputCsv \$OutputCsv'
     }
 }
+
+Describe 'What the offboarding check says about the paid tool' {
+    # Before 2026-09-29 this command said NOTHING about the paid tool. 43 free installs, 0 paid
+    # sales (METRICS 2026-09-29). Bar is the Team price, since the offboarding report is Team+.
+    It 'says the Team plan would cost more than it saves for a small tenant' {
+        $lines = (Get-OffboardingPaidNote -AnnualRecoverable 150 -LeaverCount 2 | ForEach-Object { $_.Text }) -join ' '
+
+        $lines | Should -Match 'cost more than it saves'
+        $lines | Should -Match 'Work from the CSV'
+        $lines | Should -Not -Match 'server-bridge\.com'
+    }
+
+    It 'says nothing to sell when nothing is outstanding' {
+        $lines = (Get-OffboardingPaidNote -AnnualRecoverable 0 -LeaverCount 0 | ForEach-Object { $_.Text }) -join ' '
+
+        $lines | Should -Match 'nothing here worth paying for'
+        $lines | Should -Not -Match 'server-bridge\.com'
+    }
+
+    It 'leads with their own figures once the saving clears the Team price' {
+        $lines = (Get-OffboardingPaidNote -AnnualRecoverable 1800 -LeaverCount 6 | ForEach-Object { $_.Text }) -join ' '
+
+        $lines | Should -Match '6 leaver'
+        $lines | Should -Match '\$1,800/year'
+        $lines | Should -Match 'server-bridge\.com/license-auditor\.html'
+    }
+
+    It 'treats the Team price itself as clearing the bar' {
+        $at = (Get-OffboardingPaidNote -AnnualRecoverable 349 -LeaverCount 2 | ForEach-Object { $_.Text }) -join ' '
+        $under = (Get-OffboardingPaidNote -AnnualRecoverable 348 -LeaverCount 2 | ForEach-Object { $_.Text }) -join ' '
+
+        $at | Should -Match 'server-bridge\.com'
+        $under | Should -Not -Match 'server-bridge\.com'
+    }
+}
+
+Describe 'Offboarding rows carry what the leaver still costs' {
+    # An offboarding list without a number on it makes the reader re-derive the cost from SKU names.
+    It 'sums the annual cost of the PAID licences only, ignoring free SKUs' {
+        $skuMap = @{ 'sku-e3' = 'ENTERPRISEPACK'; 'sku-free' = 'TEAMS_EXPLORATORY' }
+        $user = [pscustomobject]@{
+            DisplayName = 'A'; UserPrincipalName = 'a@c.com'; UserType = 'Member'
+            AccountEnabled = $false; LastActivity = $null
+            AssignedLicenses = @(
+                [pscustomobject]@{ SkuId = 'sku-e3' },
+                [pscustomobject]@{ SkuId = 'sku-free' }
+            )
+            GroupCount = 0; MailboxType = 'user'
+        }
+
+        $row = Get-OffboardingRow -Users @($user) -SkuMap $skuMap -Cutoff (Get-Date).AddDays(-90)
+
+        # ENTERPRISEPACK is $36/month in the price table; the free SKU must not contribute.
+        $row.AnnualCost | Should -Be (36 * 12)
+    }
+}
