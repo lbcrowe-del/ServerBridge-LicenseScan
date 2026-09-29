@@ -366,3 +366,46 @@ Describe 'Tenant-wide sign-in guard' {
         $map['mixed@case.com'] | Should -Be $recent
     }
 }
+
+Describe 'What the scan says about the paid tool' {
+    # 43 free installs, 0 paid sales (METRICS 2026-09-29). The old line was a generic feature list
+    # shown to everyone. This one uses the number the scan just produced - and says plainly when
+    # the paid tool would NOT pay for itself.
+    It 'tells a small tenant not to buy it' {
+        $lines = (Get-PaidToolNote -AnnualRecoverable 90 | ForEach-Object { $_.Text }) -join ' '
+
+        $lines | Should -Match 'would not pay for itself'
+        $lines | Should -Match 'keep the money'
+        # No link when we are telling them not to buy.
+        $lines | Should -Not -Match 'server-bridge\.com'
+    }
+
+    It 'says nothing to sell when there is nothing recoverable' {
+        $lines = (Get-PaidToolNote -AnnualRecoverable 0 | ForEach-Object { $_.Text }) -join ' '
+
+        $lines | Should -Match 'nothing here worth paying for'
+        $lines | Should -Not -Match 'server-bridge\.com'
+    }
+
+    It 'leads with their own figure when the saving clears the price' {
+        $lines = (Get-PaidToolNote -AnnualRecoverable 4200 | ForEach-Object { $_.Text }) -join ' '
+
+        $lines | Should -Match '\$4,200/year'
+        $lines | Should -Match 'server-bridge\.com/license-auditor\.html'
+    }
+
+    It 'treats the price itself as clearing the bar' {
+        $atPrice = (Get-PaidToolNote -AnnualRecoverable 149 | ForEach-Object { $_.Text }) -join ' '
+        $justUnder = (Get-PaidToolNote -AnnualRecoverable 148 | ForEach-Object { $_.Text }) -join ' '
+
+        $atPrice | Should -Match 'server-bridge\.com'
+        $justUnder | Should -Not -Match 'server-bridge\.com'
+    }
+
+    It 'never claims a paid feature that is not built' {
+        $lines = (Get-PaidToolNote -AnnualRecoverable 4200 | ForEach-Object { $_.Text }) -join ' '
+
+        $lines | Should -Not -Match '(?i)white.?label'
+        $lines | Should -Not -Match '(?i)downgrade'
+    }
+}

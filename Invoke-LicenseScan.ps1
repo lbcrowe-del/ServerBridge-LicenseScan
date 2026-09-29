@@ -383,6 +383,58 @@ function Test-GraphSdkPresent {
     return $false
 }
 
+function Get-PaidToolNote {
+    <#
+    The line shown after a scan about the paid Auditor, chosen from what the scan actually found.
+    Pure - returns the lines, prints nothing, so it can be tested.
+
+    Why this exists: 43 free installs and 0 paid sales (METRICS 2026-09-29). The old line was a
+    generic feature list shown to everyone regardless of their numbers. This says something true
+    about THEIR tenant at the moment they have just seen the figure.
+
+    The important half is the negative case. Below the Starter price the honest answer is "don't
+    buy it", and saying so is worth more than a sale that gets refunded. A tool that tells you when
+    it is not worth paying for is one you trust the next time it says something IS worth doing.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][double]$AnnualRecoverable,
+        [double]$StarterPrice = 149
+    )
+
+    if ($AnnualRecoverable -le 0) {
+        return @(
+            @{ Text = 'Nothing recoverable today, so there is nothing here worth paying for.'; Color = 'DarkGray' }
+            @{ Text = 'Worth re-running after your next round of leavers.'; Color = 'DarkGray' }
+        )
+    }
+
+    if ($AnnualRecoverable -lt $StarterPrice) {
+        return @(
+            @{ Text = ("At `${0:N0}/year recoverable, the paid Auditor (from `${1:N0}/year) would not pay for itself." -f $AnnualRecoverable, $StarterPrice); Color = 'DarkGray' }
+            @{ Text = 'Use the CSV above and keep the money.'; Color = 'DarkGray' }
+        )
+    }
+
+    return @(
+        @{ Text = ("You are paying `${0:N0}/year for seats nobody is using." -f $AnnualRecoverable); Color = 'White' }
+        @{ Text = 'The paid Auditor puts that in a PDF you can hand to whoever signs off the spend,'; Color = 'DarkGray' }
+        @{ Text = 'with what to do about each account - and re-runs it on a schedule so it stays fixed.'; Color = 'DarkGray' }
+        @{ Text = '  https://server-bridge.com/license-auditor.html'; Color = 'Cyan' }
+    )
+}
+
+function Show-PaidToolNote {
+    <# Prints Get-PaidToolNote's lines. Separated so the decision itself stays testable. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][double]$AnnualRecoverable)
+
+    Write-Host ''
+    foreach ($line in Get-PaidToolNote -AnnualRecoverable $AnnualRecoverable) {
+        Write-Host $line.Text -ForegroundColor $line.Color
+    }
+}
+
 function Show-GraphReadFailure {
     <#
     One place for "the tenant read failed", so both commands say the same thing.
@@ -605,8 +657,8 @@ function Invoke-LicenseScanMain {
     Write-Host 'Prices are list-price estimates - edit the price table for exact figures.' -ForegroundColor DarkGray
     Write-Host 'Got a number that looks wrong, or something confusing? Tell me:' -ForegroundColor DarkGray
     Write-Host '  https://github.com/lbcrowe-del/ServerBridge-LicenseScan/issues' -ForegroundColor Cyan
-    Write-Host 'Want the PDF report, costed recommended actions and scheduled re-audits?' -ForegroundColor DarkGray
-    Write-Host '  https://server-bridge.com/license-auditor.html' -ForegroundColor Cyan
+
+    Show-PaidToolNote -AnnualRecoverable $totalAnnual
     Write-Host ''
 
     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
