@@ -140,6 +140,58 @@ function Get-MailboxTypeLabel {
     }
 }
 
+function Get-OffboardingPaidNote {
+    <#
+    What to say about the paid Auditor after an offboarding check. Pure - returns lines, prints
+    nothing, so the thresholds are testable.
+
+    Mirrors Get-PaidToolNote in the license scan, with the Team price as the bar because the
+    offboarding list in the PDF is a Team feature. Same principle: below the price, say so and show
+    no link. This command had NO mention of the paid tool at all before 2026-09-29, which is the
+    opposite failure - 43 free installs and 0 paid sales (METRICS 2026-09-29).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][double]$AnnualRecoverable,
+        [Parameter(Mandatory)][int]$LeaverCount,
+        [double]$TeamPrice = 349
+    )
+
+    if ($LeaverCount -le 0) {
+        return @(
+            @{ Text = 'Nothing outstanding, so there is nothing here worth paying for.'; Color = 'DarkGray' }
+        )
+    }
+
+    if ($AnnualRecoverable -lt $TeamPrice) {
+        return @(
+            @{ Text = ("At `${0:N0}/year across {1:N0} account(s), the paid Auditor's offboarding report (Team, `${2:N0}/year) would cost more than it saves." -f $AnnualRecoverable, $LeaverCount, $TeamPrice); Color = 'DarkGray' }
+            @{ Text = 'Work from the CSV above instead.'; Color = 'DarkGray' }
+        )
+    }
+
+    return @(
+        @{ Text = ("{0:N0} leaver(s) are still holding `${1:N0}/year between them." -f $LeaverCount, $AnnualRecoverable); Color = 'White' }
+        @{ Text = "The paid Auditor's Team plan puts this in the PDF per person, and re-runs it on a"; Color = 'DarkGray' }
+        @{ Text = 'schedule so the next round of leavers gets caught without anyone remembering to look.'; Color = 'DarkGray' }
+        @{ Text = '  https://server-bridge.com/license-auditor.html'; Color = 'Cyan' }
+    )
+}
+
+function Show-OffboardingPaidNote {
+    <# Prints Get-OffboardingPaidNote's lines. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][double]$AnnualRecoverable,
+        [Parameter(Mandatory)][int]$LeaverCount
+    )
+
+    Write-Host ''
+    foreach ($line in Get-OffboardingPaidNote -AnnualRecoverable $AnnualRecoverable -LeaverCount $LeaverCount) {
+        Write-Host $line.Text -ForegroundColor $line.Color
+    }
+}
+
 function Get-OffboardingRow {
     <#
     Pure projection: given normalized user objects (DisplayName, UserPrincipalName, UserType,
@@ -175,12 +227,18 @@ function Get-OffboardingRow {
         if (-not $reason) { continue }
 
         $licenses = @()
+        $annualCost = 0.0
         foreach ($lic in $u.AssignedLicenses) {
             $part = $SkuMap[$lic.SkuId]
             if (-not $part) { continue }
-            if ((Get-SkuMonthlyPrice -PartNumber $part) -le 0) { continue }  # free SKUs aren't worth reclaiming
+            $monthly = Get-SkuMonthlyPrice -PartNumber $part
+            if ($monthly -le 0) { continue }  # free SKUs aren't worth reclaiming
             $licenses += $part
+            # What the leaver is still costing. The list is more useful with a number on it, and
+            # nothing downstream should have to re-derive it from the SKU names.
+            $annualCost += ($monthly * 12)
         }
+        $annualCost = [math]::Round($annualCost, 2)
 
         $mailboxType = if ($u.MailboxType) { $u.MailboxType } else { 'unknown' }
         $groupCount = if ($null -ne $u.GroupCount) { [int]$u.GroupCount } else { $null }
@@ -200,6 +258,7 @@ function Get-OffboardingRow {
             Licenses          = ($licenses -join '; ')
             LicenseCount      = $licenses.Count
             GroupCount        = $groupCount
+            AnnualCost        = $annualCost
             MailboxType       = $mailboxType
             Findings          = ($findings -join '; ')
         }
@@ -453,8 +512,9 @@ function Invoke-OffboardingCheckMain {
     $stillLicensed = @($rows | Where-Object { $_.LicenseCount -gt 0 }).Count
     $notShared = @($rows | Where-Object { $_.MailboxType -eq 'user' }).Count
     $typeUnknown = @($rows | Where-Object { $_.MailboxType -eq 'unknown' }).Count
+    $annualTotal = [math]::Round((($rows | Measure-Object AnnualCost -Sum).Sum), 0)
     Write-Host ("  Accounts to review     : {0:N0}" -f $rows.Count) -ForegroundColor White
-    Write-Host ("  Still holding licenses : {0:N0}" -f $stillLicensed) -ForegroundColor Yellow
+    Write-Host ("  Still holding licenses : {0:N0}   (`${1:N0} / year)" -f $stillLicensed, $annualTotal) -ForegroundColor Yellow
     # Never print a bare 0 for a count nobody could read: "0 mailboxes not shared" reads as an
     # all-clear on work that was never checked. Same false zero fixed in the paid CLI 2026-09-22.
     if ($typeUnknown -eq $rows.Count -and $rows.Count -gt 0) {
@@ -487,6 +547,8 @@ function Invoke-OffboardingCheckMain {
     Write-Host 'A licensed shared mailbox under 50 GB without an archive usually needs no license.' -ForegroundColor DarkGray
     Write-Host 'Got an account it judged wrong, or something confusing? Tell me:' -ForegroundColor DarkGray
     Write-Host '  https://github.com/lbcrowe-del/ServerBridge-LicenseScan/issues' -ForegroundColor Cyan
+
+    Show-OffboardingPaidNote -AnnualRecoverable $annualTotal -LeaverCount $rows.Count
     Write-Host ''
 
     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
