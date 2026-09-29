@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **The line about the paid Auditor now depends on what the scan actually found.** If the
+  recoverable spend is less than the Auditor costs, it says so and tells you to keep your money —
+  no link. If there's nothing recoverable at all, it says there's nothing here worth paying for.
+  Above that, it leads with your own figure rather than a list of features.
+
 ## 1.3.0 — 2026-09-23
 
 ### Changed
