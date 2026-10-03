@@ -88,11 +88,12 @@ temp.contractor@cont.com disabled                         1 shared
 One row per person, not per license, because offboarding is a per-person job. The full list goes to
 `offboarding-check_<tenant>_<date>.csv`.
 
-**Two honest limits.** Mailbox type comes from Microsoft's mailbox usage report, which lists only
-mailboxes that have **had activity** — so a shared mailbox nobody has touched doesn't appear in it
-at all, at any age, and its type reads `unknown` rather than being guessed at. That's the mailbox
-most likely to be wasting a licence, so if you need those, use `-UseExchangeOnline` (below). The
-same `unknown` appears if your tenant conceals user names in reports. Group counts come from each
+**Two honest limits.** Mailbox type comes from Microsoft's mailbox usage report, which can take a
+long time to list a mailbox nobody has used — in our own testing one was still missing after a week
+and only appeared at around eighteen days old. Until it does, its type reads `unknown` rather than
+being guessed at. That's the mailbox most likely to be wasting a licence, so if you need those now,
+use `-UseExchangeOnline` (below), which reads Exchange directly and doesn't wait. The same `unknown`
+appears if your tenant conceals user names in reports. Group counts come from each
 account's direct memberships; if the count can't be read it stays blank instead of showing `0`,
 because `0` would wrongly suggest the account is clean.
 

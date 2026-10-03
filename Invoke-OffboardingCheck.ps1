@@ -121,8 +121,10 @@ if (-not (Get-Command -Name Connect-ScanGraph -ErrorAction SilentlyContinue)) {
 function Get-MailboxTypeLabel {
     <#
     Plain-English label for a mailbox recipient type from Microsoft's usage report.
-    $null/empty means the report didn't cover this account - it lists only mailboxes that have had
-    activity, so an unused one never appears in it regardless of age.
+    $null/empty means the report didn't cover this account. It can take a long time to list a mailbox
+    nobody has used - one was still missing after a week (D7 and D180 alike, 2026-09-22) and only
+    appeared ~18 days old, still under 0.1 GB (2026-10-03). The rule is not known, so claim nothing
+    more than "it may take a while".
     #>
     [CmdletBinding()]
     param([Parameter()][AllowNull()][AllowEmptyString()][string]$RecipientType)
