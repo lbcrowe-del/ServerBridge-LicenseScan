@@ -1,6 +1,6 @@
 @{
     RootModule        = 'ServerBridge.LicenseScan.psm1'
-    ModuleVersion     = '1.4.0'
+    ModuleVersion     = '1.5.0'
     GUID              = '24b0a1fa-4b98-4900-99db-b0f3c9f960cf'
     Author            = 'Lee Crowe Software Solutions LLC'
     CompanyName       = 'Lee Crowe Software Solutions LLC'
@@ -32,7 +32,7 @@
                              'Windows', 'Linux', 'MacOS')
             LicenseUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan'
-            ReleaseNotes = 'Both commands now say whether the paid Auditor is actually worth it for your tenant, using the numbers the scan just produced. If the recoverable spend is less than the tool costs, they say so and tell you to keep your money - no link. If there is nothing to recover, they say there is nothing worth paying for. New: the offboarding check shows what the leavers are still costing per year, both in the summary and as an AnnualCost column in the CSV - note this adds a column, which matters if you parse the CSV by position. See CHANGELOG.md on GitHub for earlier changes.'
+            ReleaseNotes = 'Sign-in now uses our own app, ServerBridge License Auditor, instead of Microsoft''s Graph Command Line Tools app. Microsoft has verified it as published by Lee Crowe Software Solutions LLC, so the consent screen says who is asking and shows a verified badge. Same four read-only permissions. The first time anyone in your organization runs 1.5.0, an admin is asked to approve the new app once. See CHANGELOG.md on GitHub for earlier changes.'
         }
     }
 }
