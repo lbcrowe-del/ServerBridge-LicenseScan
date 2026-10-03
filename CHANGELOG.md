@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 — 2026-10-03
 
 ### Changed
 - **Sign-in now uses our own app, "ServerBridge License Auditor", instead of Microsoft's Graph
