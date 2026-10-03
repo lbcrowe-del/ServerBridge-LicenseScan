@@ -73,6 +73,10 @@ param(
 )
 
 $script:RequiredScopes = @('User.Read.All', 'Organization.Read.All', 'AuditLog.Read.All', 'Reports.Read.All')
+# Our own publisher-verified app, "ServerBridge License Auditor" (Lee Crowe Software Solutions LLC),
+# so the consent screen shows who is asking. Until 2026-10-03 this was Microsoft's Graph Command Line
+# Tools app. The paid tool signs in with the same app.
+$script:SignInClientId = '931c3cab-1458-4cb8-b0cd-f2bd4be4482c'
 
 # --- Approximate public list prices, USD / user / month, keyed by SkuPartNumber.
 # --- ESTIMATES so the tool can put a dollar figure on waste out of the box.
@@ -481,7 +485,7 @@ function Connect-ScanGraph {
             # - which captures that stream. The code then lands in this function's return value
             # instead of on screen, so the user sees "a device code will appear below", no code, and
             # a 2-minute timeout. Sign-in was impossible. Found 2026-09-22 on Graph SDK 2.38.0.
-            Connect-MgGraph -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop |
+            Connect-MgGraph -ClientId $script:SignInClientId -Scopes $script:RequiredScopes -UseDeviceCode -NoWelcome -ContextScope Process -ErrorAction Stop |
                 Out-Host
             $signedIn = $true
         } catch {

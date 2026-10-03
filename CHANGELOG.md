@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Sign-in now uses our own app, "ServerBridge License Auditor", instead of Microsoft's Graph
+  Command Line Tools app.** Microsoft has verified it as published by Lee Crowe Software Solutions
+  LLC, so the consent screen says who is asking and shows a verified badge. The permissions are the
+  same four read-only ones. The first time anyone in your organization runs this version, an admin is
+  asked to approve the new app once.
+
 ## 1.4.0 — 2026-09-29
 
 ### Added

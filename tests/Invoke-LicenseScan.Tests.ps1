@@ -210,6 +210,15 @@ Describe 'Sign-in hygiene' {
         $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
         $src | Should -Match 'Connect-MgGraph[^\r\n]*-ContextScope Process'
     }
+
+    # Our own publisher-verified app, not Microsoft's Graph Command Line Tools (14d82eec...), so the
+    # consent screen names us and carries the verified badge.
+    It 'signs in with our own verified app' {
+        $src = Get-Content -Raw (Join-Path (Split-Path -Parent $PSScriptRoot) 'Invoke-LicenseScan.ps1')
+        $src | Should -Match "\`$script:SignInClientId = '931c3cab-1458-4cb8-b0cd-f2bd4be4482c'"
+        $src | Should -Match 'Connect-MgGraph -ClientId \$script:SignInClientId '
+        $src | Should -Not -Match '14d82eec'
+    }
 }
 
 Describe 'Upsell text' {

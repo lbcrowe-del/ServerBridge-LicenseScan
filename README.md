@@ -125,8 +125,9 @@ Read-only, and if it can't connect the check carries on with the usage report ra
 
 ## Permissions it asks for, and why
 
-Sign-in uses Microsoft's own **Microsoft Graph Command Line Tools** app with a device code. Every
-permission is **delegated** (it acts as you) and **read-only**:
+Sign-in uses a device code and our own app, **ServerBridge License Auditor**, verified by Microsoft
+as published by Lee Crowe Software Solutions LLC. The first time anyone in your organization runs it,
+an admin is asked to approve that app. Every permission is **delegated** (it acts as you) and **read-only**:
 
 | Permission | Why the scan needs it |
 |---|---|
