@@ -41,12 +41,11 @@ Wasted spend by license
 
 License        DormantSeats Annual $
 -------        ------------ --------
-ENTERPRISEPACK           12     5184
-SPE_E5                    3     2052
-POWER_BI_PRO              6      720
+ENTERPRISEPACK           12     3744
+SPE_E5                    3     2160
+POWER_BI_PRO              6     1008
 
-  Reclaimable seats : 21
-  Wasted spend      : $7,956 / year
+  Estimated unused licenses : 21  (about $6,912/year at Microsoft list price)
 ```
 
 Free licenses (Teams Exploratory, Power Automate Free and similar) are skipped. Guest accounts
@@ -81,7 +80,7 @@ a.jones@contoso.com      inactive SPE_E5                  3 user
 temp.contractor@cont.com disabled                         1 shared
 
   Accounts to review     : 3
-  Still holding licenses : 2   ($1,368 / year)
+  Still holding licenses : 2   ($1,032 / year)
   Mailbox not shared     : 2
 ```
 
@@ -162,7 +161,9 @@ By default the CSV is saved to the current folder as `license-scan_<tenant>_<dat
 `offboarding-check_<tenant>_<date>.csv`. It is only written when there is something to report.
 
 **Prices are list-price estimates** in USD per user per month, so you get a dollar figure out of the
-box. Unknown SKUs are priced at $20. For exact figures, edit the price table near the top of
+box. They are Microsoft's list prices from July 1, 2026; if you haven't renewed since then you may
+still be paying the old price, so treat the figure as an estimate, not your invoice. Unknown SKUs are
+priced at $20. For exact figures, edit the price table near the top of
 `Invoke-LicenseScan.ps1` to match your contract.
 
 To update later: `Update-Module ServerBridge.LicenseScan`

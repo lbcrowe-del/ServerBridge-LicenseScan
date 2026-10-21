@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.0 — 2026-10-21
+
+### Fixed
+- **Office 365 E3 and E5 seats were overpriced by about 40%.** The price table charged them at the
+  Microsoft 365 E3 and E5 prices ($36 and $57 a month) instead of Office 365's ($26 and $41).
+- **Prices updated to Microsoft's July 1, 2026 list:** Business Basic $7, Business Standard $14,
+  Office 365 E3 $26 and E5 $41, Microsoft 365 E3 $39, E5 $60 and F3 $10. Power BI Pro is now $14,
+  Power BI Premium Per User $24 and Teams Phone Standard $10, their April 2025 prices. The same
+  table is used by the paid License Auditor.
+
+### Changed
+- **One estimate line instead of two summary lines:** `Estimated unused licenses : N (about $X/year
+  at Microsoft list price)`. Same numbers as before, labelled as the estimate they are. Existing
+  customers keep their old Microsoft price until renewal, and the scan now says so.
+- **The note about the paid tool is one line**, shown only when the waste is worth more than the
+  paid tool's lowest price ($149). Below that, the scan still says the paid tool wouldn't pay for
+  itself.
+
 ## 1.5.0 — 2026-10-03
 
 ### Changed

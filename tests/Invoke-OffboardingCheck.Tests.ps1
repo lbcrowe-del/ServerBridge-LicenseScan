@@ -311,7 +311,7 @@ Describe 'Offboarding rows carry what the leaver still costs' {
 
         $row = Get-OffboardingRow -Users @($user) -SkuMap $skuMap -Cutoff (Get-Date).AddDays(-90)
 
-        # ENTERPRISEPACK is $36/month in the price table; the free SKU must not contribute.
-        $row.AnnualCost | Should -Be (36 * 12)
+        # ENTERPRISEPACK (Office 365 E3) is $26/month in the price table; the free SKU must not contribute.
+        $row.AnnualCost | Should -Be (26 * 12)
     }
 }
