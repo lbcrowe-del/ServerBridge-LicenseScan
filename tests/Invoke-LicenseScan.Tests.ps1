@@ -7,7 +7,7 @@ BeforeAll {
 
 Describe 'Get-SkuMonthlyPrice' {
     It 'returns the mapped price for a known SKU' {
-        Get-SkuMonthlyPrice -PartNumber 'ENTERPRISEPACK' | Should -Be 36.00
+        Get-SkuMonthlyPrice -PartNumber 'ENTERPRISEPACK' | Should -Be 26.00
     }
     It 'returns the mapped price for Copilot' {
         Get-SkuMonthlyPrice -PartNumber 'Microsoft_365_Copilot' | Should -Be 30.00
@@ -103,7 +103,7 @@ Describe 'Get-DormantLicenseRow' {
         $rows = @(Get-DormantLicenseRow -Users $users -SkuMap $skuMap -Cutoff $cutoff)
         $rows.Count | Should -Be 1
         $rows[0].Sku | Should -Be 'ENTERPRISEPACK'
-        $rows[0].AnnualCost | Should -Be 432.00
+        $rows[0].AnnualCost | Should -Be 312.00
         $rows[0].Reason | Should -Be 'inactive'
         $rows[0].LastActivity | Should -Be 'never/unknown'
     }
@@ -396,11 +396,29 @@ Describe 'What the scan says about the paid tool' {
         $lines | Should -Not -Match 'server-bridge\.com'
     }
 
-    It 'leads with their own figure when the saving clears the price' {
-        $lines = (Get-PaidToolNote -AnnualRecoverable 4200 | ForEach-Object { $_.Text }) -join ' '
+    It 'shows exactly one line, with the tracked link, when the saving clears the price' {
+        $lines = @(Get-PaidToolNote -AnnualRecoverable 4200)
 
-        $lines | Should -Match '\$4,200/year'
-        $lines | Should -Match 'server-bridge\.com/license-auditor\.html'
+        $lines.Count | Should -Be 1
+        $lines[0].Text | Should -Not -Match "`n"
+        $lines[0].Text | Should -Match ([regex]::Escape('https://server-bridge.com/license-auditor.html?ct=la160_freescan'))
+    }
+
+    It 'defines the link once' {
+        $script:PaidToolUrl | Should -Be 'https://server-bridge.com/license-auditor.html?ct=la160_freescan'
+        # Two-argument Join-Path: Windows PowerShell 5.1 has no -AdditionalChildPath.
+        $src = Get-Content (Join-Path (Split-Path $PSScriptRoot -Parent) 'Invoke-LicenseScan.ps1') -Raw
+        ([regex]::Matches($src, 'la160_freescan')).Count | Should -Be 1
+    }
+
+    It 'never promises savings, in any branch' {
+        foreach ($amount in 0, 90, 148, 149, 4200) {
+            $text = (Get-PaidToolNote -AnnualRecoverable $amount | ForEach-Object { $_.Text }) -join ' '
+            $text | Should -Not -Match '(?i)\bsav(e|es|ing|ings)\b'
+            $text | Should -Not -Match '(?i)guarantee'
+            $text | Should -Not -Match '(?i)\bbest\b'
+            $text | Should -Not -Match '#1'
+        }
     }
 
     It 'treats the price itself as clearing the bar' {

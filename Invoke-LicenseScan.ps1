@@ -81,30 +81,38 @@ $script:SignInClientId = '931c3cab-1458-4cb8-b0cd-f2bd4be4482c'
 # --- Approximate public list prices, USD / user / month, keyed by SkuPartNumber.
 # --- ESTIMATES so the tool can put a dollar figure on waste out of the box.
 # --- Edit to match your real per-seat cost for precise numbers.
+# --- List prices as of 2026-07-01, with Teams, annual commitment:
+# --- https://www.microsoft.com/en-us/licensing/news/2026-m365-packaging-pricing-updates
+# --- Existing customers keep their old price until renewal. Keep this table identical to the paid
+# --- Auditor's Pricing.cs. Rows marked "not re-verified" were last checked before 2026-10.
 $script:SkuPrice = @{
-    'O365_BUSINESS_ESSENTIALS' = 6.00    # Microsoft 365 Business Basic
-    'O365_BUSINESS_PREMIUM'    = 12.50   # Microsoft 365 Business Standard
+    'O365_BUSINESS_ESSENTIALS' = 7.00    # Microsoft 365 Business Basic
+    'O365_BUSINESS_PREMIUM'    = 14.00   # Microsoft 365 Business Standard
     'SPB'                      = 22.00   # Microsoft 365 Business Premium
-    'ENTERPRISEPACK'           = 36.00   # Office 365 E3
-    'ENTERPRISEPREMIUM'        = 57.00   # Office 365 E5
-    'SPE_E3'                   = 36.00   # Microsoft 365 E3
-    'SPE_E5'                   = 57.00   # Microsoft 365 E5
-    'SPE_F1'                   = 8.00    # Microsoft 365 F3
-    'DESKLESSPACK'             = 4.00    # Office 365 F3
-    'EXCHANGESTANDARD'         = 4.00    # Exchange Online Plan 1
-    'EXCHANGEENTERPRISE'       = 8.00    # Exchange Online Plan 2
-    'MCOEV'                    = 8.00    # Teams Phone Standard
-    'POWER_BI_PRO'             = 10.00   # Power BI Pro
-    'POWER_BI_PREMIUM_PER_USER' = 20.00  # Power BI Premium Per User
-    'PROJECTPROFESSIONAL'      = 30.00   # Project Plan 3
-    'PROJECTPREMIUM'           = 55.00   # Project Plan 5
-    'VISIOCLIENT'              = 15.00   # Visio Plan 2
+    'ENTERPRISEPACK'           = 26.00   # Office 365 E3 (was wrongly 36.00, the Microsoft 365 E3 price)
+    'ENTERPRISEPREMIUM'        = 41.00   # Office 365 E5 (was wrongly 57.00, the Microsoft 365 E5 price)
+    'SPE_E3'                   = 39.00   # Microsoft 365 E3
+    'SPE_E5'                   = 60.00   # Microsoft 365 E5
+    'SPE_F1'                   = 10.00   # Microsoft 365 F3
+    'DESKLESSPACK'             = 4.00    # Office 365 F3 (not re-verified)
+    'EXCHANGESTANDARD'         = 4.00    # Exchange Online Plan 1 (not re-verified)
+    'EXCHANGEENTERPRISE'       = 8.00    # Exchange Online Plan 2 (not re-verified)
+    'MCOEV'                    = 10.00   # Teams Phone Standard (raised 2025-04-01)
+    'POWER_BI_PRO'             = 14.00   # Power BI Pro (raised 2025-04-01)
+    'POWER_BI_PREMIUM_PER_USER' = 24.00  # Power BI Premium Per User (raised 2025-04-01)
+    'PROJECTPROFESSIONAL'      = 30.00   # Project Plan 3 (not re-verified)
+    'PROJECTPREMIUM'           = 55.00   # Project Plan 5 (not re-verified)
+    'VISIOCLIENT'              = 15.00   # Visio Plan 2 (not re-verified)
     'Microsoft_365_Copilot'    = 30.00   # Microsoft 365 Copilot
     'FLOW_FREE'                = 0.00    # Power Automate (free)
     'TEAMS_EXPLORATORY'        = 0.00    # Teams Exploratory (free)
     'POWERAPPS_VIRAL'          = 0.00    # Power Apps (free/viral)
 }
 $script:DefaultPrice = 20.00  # fallback for SKUs not in the table
+
+# The one link to the paid tool, printed only when the scan finds more than the Starter price.
+# ct= is the campaign code PostHog records on server-bridge.com (issue #23). Change it here only.
+$script:PaidToolUrl = 'https://server-bridge.com/license-auditor.html?ct=la160_freescan'
 
 # ---------------------------------------------------------------------------
 # Pure, testable helpers (no Graph calls - safe to dot-source)
@@ -420,11 +428,10 @@ function Get-PaidToolNote {
         )
     }
 
+    # One line, and no figure: the estimate line above already said what they are paying. Never
+    # "save", never a promise - the number is a list-price estimate, not their invoice.
     return @(
-        @{ Text = ("You are paying `${0:N0}/year for seats nobody is using." -f $AnnualRecoverable); Color = 'White' }
-        @{ Text = 'The paid Auditor puts that in a PDF you can hand to whoever signs off the spend,'; Color = 'DarkGray' }
-        @{ Text = 'with what to do about each account - and re-runs it on a schedule so it stays fixed.'; Color = 'DarkGray' }
-        @{ Text = '  https://server-bridge.com/license-auditor.html'; Color = 'Cyan' }
+        @{ Text = ("The paid License Auditor turns this into a costed PDF you can hand to whoever signs off the spend: {0}" -f $script:PaidToolUrl); Color = 'Cyan' }
     )
 }
 
@@ -637,8 +644,9 @@ function Invoke-LicenseScanMain {
     }
 
     $totalAnnual = [math]::Round((($dormant | Measure-Object AnnualCost -Sum).Sum), 0)
-    Write-Host ("  Reclaimable seats : {0:N0}" -f $dormant.Count) -ForegroundColor White
-    Write-Host ("  Wasted spend      : `${0:N0} / year" -f $totalAnnual) -ForegroundColor Green
+    # One line, same two numbers as before (reclaimable seats and their yearly cost), labelled for
+    # what they are: an estimate at Microsoft's list price, not anyone's invoice.
+    Write-Host ("  Estimated unused licenses : {0:N0}  (about `${1:N0}/year at Microsoft list price)" -f $dormant.Count, $totalAnnual) -ForegroundColor Green
     Write-Host ''
 
     if (-not $OutputCsv) {
@@ -658,7 +666,8 @@ function Invoke-LicenseScanMain {
         Write-Host ''
     }
 
-    Write-Host 'Prices are list-price estimates - edit the price table for exact figures.' -ForegroundColor DarkGray
+    Write-Host 'Prices are Microsoft list-price estimates (July 2026). Existing customers keep their old' -ForegroundColor DarkGray
+    Write-Host 'price until renewal, so this is not your invoice - edit the price table for exact figures.' -ForegroundColor DarkGray
     Write-Host 'Got a number that looks wrong, or something confusing? Tell me:' -ForegroundColor DarkGray
     Write-Host '  https://github.com/lbcrowe-del/ServerBridge-LicenseScan/issues' -ForegroundColor Cyan
 
