@@ -406,7 +406,8 @@ Describe 'What the scan says about the paid tool' {
 
     It 'defines the link once' {
         $script:PaidToolUrl | Should -Be 'https://server-bridge.com/license-auditor.html?ct=la160_freescan'
-        $src = Get-Content (Join-Path $PSScriptRoot '..' 'Invoke-LicenseScan.ps1') -Raw
+        # Two-argument Join-Path: Windows PowerShell 5.1 has no -AdditionalChildPath.
+        $src = Get-Content (Join-Path (Split-Path $PSScriptRoot -Parent) 'Invoke-LicenseScan.ps1') -Raw
         ([regex]::Matches($src, 'la160_freescan')).Count | Should -Be 1
     }
 
