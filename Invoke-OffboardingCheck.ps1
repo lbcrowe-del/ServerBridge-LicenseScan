@@ -424,7 +424,9 @@ function Invoke-OffboardingCheckMain {
         Write-Host "Connected to: $tenantName (signed in as $((Get-MgContext).Account))" -ForegroundColor Green
 
         $skuMap = @{}
-        foreach ($s in (Get-MgSubscribedSku -All -ErrorAction Stop)) { $skuMap[$s.SkuId] = $s.SkuPartNumber }
+        $subscribed = @(Get-MgSubscribedSku -All -ErrorAction Stop)
+        foreach ($s in $subscribed) { $skuMap[$s.SkuId] = $s.SkuPartNumber }
+        Resolve-UnbilledSku -SubscribedSkus $subscribed
 
         $select = 'id,displayName,userPrincipalName,userType,accountEnabled,assignedLicenses'
         $rawUsers = Get-MgUser -All -Property $select -ErrorAction Stop
