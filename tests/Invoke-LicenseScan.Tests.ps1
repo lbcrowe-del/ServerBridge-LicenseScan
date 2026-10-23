@@ -436,3 +436,37 @@ Describe 'What the scan says about the paid tool' {
         $lines | Should -Not -Match '(?i)downgrade'
     }
 }
+
+Describe 'Licences nobody is paying for' {
+    # Real tenant, 2026-10-23: a disabled Business Standard trial was priced as $168/year of waste.
+    BeforeEach { $script:UnbilledParts = @{} }
+    AfterEach { $script:UnbilledParts = @{} }
+
+    It 'treats a disabled subscription as unbilled' {
+        $skus = @([pscustomobject]@{ SkuId = 'a'; SkuPartNumber = 'O365_BUSINESS_PREMIUM'; CapabilityStatus = 'Suspended'; PrepaidUnits = [pscustomobject]@{ Enabled = 0 } })
+        (Get-UnbilledSkuPart -SubscribedSkus $skus) | Should -Be @('O365_BUSINESS_PREMIUM')
+    }
+
+    It 'treats an all-trial subscription as unbilled, and a mixed one as billed' {
+        $skus = @(
+            [pscustomobject]@{ SkuId = 't'; SkuPartNumber = 'O365_BUSINESS_PREMIUM'; CapabilityStatus = 'Enabled'; PrepaidUnits = [pscustomobject]@{ Enabled = 25 } }
+            [pscustomobject]@{ SkuId = 'm'; SkuPartNumber = 'ENTERPRISEPACK'; CapabilityStatus = 'Enabled'; PrepaidUnits = [pscustomobject]@{ Enabled = 35 } }
+        )
+        $subs = @(
+            [pscustomobject]@{ skuId = 't'; isTrial = $true; status = 'Enabled'; totalLicenses = 25 }
+            [pscustomobject]@{ skuId = 'm'; isTrial = $true; status = 'Enabled'; totalLicenses = 25 }
+        )
+        (Get-UnbilledSkuPart -SubscribedSkus $skus -DirectorySubscriptions $subs) | Should -Be @('O365_BUSINESS_PREMIUM')
+    }
+
+    It 'keeps a normal paid subscription billed' {
+        $skus = @([pscustomobject]@{ SkuId = 'p'; SkuPartNumber = 'SPB'; CapabilityStatus = 'Enabled'; PrepaidUnits = [pscustomobject]@{ Enabled = 5 } })
+        @(Get-UnbilledSkuPart -SubscribedSkus $skus).Count | Should -Be 0
+    }
+
+    It 'prices an unbilled SKU at zero and leaves the rest alone' {
+        $script:UnbilledParts = @{ 'O365_BUSINESS_PREMIUM' = $true }
+        Get-SkuMonthlyPrice -PartNumber 'O365_BUSINESS_PREMIUM' | Should -Be 0
+        Get-SkuMonthlyPrice -PartNumber 'ENTERPRISEPACK' | Should -Be 26.00
+    }
+}

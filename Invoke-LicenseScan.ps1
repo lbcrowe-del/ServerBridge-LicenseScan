@@ -110,6 +110,10 @@ $script:SkuPrice = @{
 }
 $script:DefaultPrice = 20.00  # fallback for SKUs not in the table
 
+# SKUs this tenant isn't paying for: all-trial subscriptions and ones that are disabled, suspended or
+# expired. Filled in by Resolve-UnbilledSku after sign-in; priced at $0 so they are never counted as waste.
+$script:UnbilledParts = @{}
+
 # The one link to the paid tool, printed only when the scan finds more than the Starter price.
 # ct= is the campaign code PostHog records on server-bridge.com (issue #23). Change it here only.
 $script:PaidToolUrl = 'https://server-bridge.com/license-auditor.html?ct=la160_freescan'
@@ -121,8 +125,61 @@ $script:PaidToolUrl = 'https://server-bridge.com/license-auditor.html?ct=la160_f
 function Get-SkuMonthlyPrice {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$PartNumber)
+    # A licence on a free trial or an inactive subscription costs nothing, so removing it saves nothing.
+    if ($script:UnbilledParts.ContainsKey($PartNumber)) { return [double]0 }
     if ($script:SkuPrice.ContainsKey($PartNumber)) { return [double]$script:SkuPrice[$PartNumber] }
     return [double]$script:DefaultPrice
+}
+
+function Get-UnbilledSkuPart {
+    <#
+    Which SKUs nobody is paying for. Pure - takes the subscribed SKUs and directory subscriptions as
+    plain objects, so it can be tested without Graph.
+
+    A SKU is billed only when its capabilityStatus is Enabled AND at least one of its enabled seats is
+    not a free trial. Found on a real tenant, 2026-10-23: a dormant shared mailbox and a guest on a
+    Business Standard trial that had been disabled ten days earlier were each priced at $168/year of
+    waste. Same rule as the paid Auditor's SkuInventory.Billable.
+    #>
+    [CmdletBinding()]
+    param(
+        [object[]]$SubscribedSkus = @(),
+        [object[]]$DirectorySubscriptions = @()
+    )
+    $trialSeats = @{}
+    foreach ($d in $DirectorySubscriptions) {
+        if ($d.isTrial -eq $true -and "$($d.status)" -eq 'Enabled' -and $d.skuId) {
+            $key = "$($d.skuId)"
+            $trialSeats[$key] = [int]$trialSeats[$key] + [int]$d.totalLicenses
+        }
+    }
+    $unbilled = @()
+    foreach ($s in $SubscribedSkus) {
+        $enabled = [int]$s.PrepaidUnits.Enabled
+        $paid = [math]::Max(0, $enabled - [int]$trialSeats["$($s.SkuId)"])
+        if ("$($s.CapabilityStatus)" -ne 'Enabled' -or $paid -le 0) { $unbilled += $s.SkuPartNumber }
+    }
+    return $unbilled
+}
+
+function Resolve-UnbilledSku {
+    <# Reads directory subscriptions (Organization.Read.All, already granted) and records which SKUs
+       cost nothing. If that read fails, every SKU is treated as billed and the scan says so. #>
+    [CmdletBinding()]
+    param([object[]]$SubscribedSkus = @())
+    $script:UnbilledParts = @{}
+    try {
+        $subs = (Invoke-MgGraphRequest -Method GET -Uri 'https://graph.microsoft.com/v1.0/directory/subscriptions' -ErrorAction Stop).value
+    } catch {
+        Write-Host "  (couldn't check for free trials - trial licences are priced as if paid)" -ForegroundColor DarkGray
+        $subs = @()
+    }
+    foreach ($p in (Get-UnbilledSkuPart -SubscribedSkus $SubscribedSkus -DirectorySubscriptions $subs)) {
+        if ($p) { $script:UnbilledParts[$p] = $true }
+    }
+    if ($script:UnbilledParts.Count -gt 0) {
+        Write-Host ("Not counted (free trial or inactive subscription, so it costs nothing today): {0}" -f (($script:UnbilledParts.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkGray
+    }
 }
 
 function Test-UserDormant {
@@ -583,7 +640,9 @@ function Invoke-LicenseScanMain {
         Write-Host "Connected to: $tenantName (signed in as $((Get-MgContext).Account))" -ForegroundColor Green
 
         $skuMap = @{}
-        foreach ($s in (Get-MgSubscribedSku -All -ErrorAction Stop)) { $skuMap[$s.SkuId] = $s.SkuPartNumber }
+        $subscribed = @(Get-MgSubscribedSku -All -ErrorAction Stop)
+        foreach ($s in $subscribed) { $skuMap[$s.SkuId] = $s.SkuPartNumber }
+        Resolve-UnbilledSku -SubscribedSkus $subscribed
 
         $select = 'id,displayName,userPrincipalName,userType,accountEnabled,assignedLicenses'
         $rawUsers = Get-MgUser -All -Property $select -Filter 'assignedLicenses/$count ne 0' `

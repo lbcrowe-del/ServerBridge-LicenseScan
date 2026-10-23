@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.1 — 2026-10-23
+
+### Fixed
+- **Licences on free trials or on disabled, suspended or expired subscriptions are no longer counted
+  as wasted spend.** They cost nothing today, so removing them saves nothing. Before this, a dormant
+  account on a lapsed Business Standard trial was priced at $168/year of waste. Both commands now
+  print which subscriptions they left out. The paid License Auditor got the same fix in 1.2.3.
+
 ## 1.6.0 — 2026-10-21
 
 ### Fixed

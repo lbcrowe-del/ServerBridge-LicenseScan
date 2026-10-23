@@ -1,6 +1,6 @@
 @{
     RootModule        = 'ServerBridge.LicenseScan.psm1'
-    ModuleVersion     = '1.6.0'
+    ModuleVersion     = '1.6.1'
     GUID              = '24b0a1fa-4b98-4900-99db-b0f3c9f960cf'
     Author            = 'Lee Crowe Software Solutions LLC'
     CompanyName       = 'Lee Crowe Software Solutions LLC'
@@ -32,7 +32,7 @@
                              'Windows', 'Linux', 'MacOS')
             LicenseUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/lbcrowe-del/ServerBridge-LicenseScan'
-            ReleaseNotes = 'Prices corrected and updated to Microsoft''s July 1, 2026 list. Office 365 E3 and E5 had been priced as Microsoft 365 E3 and E5 ($36 and $57 instead of $26 and $41), overstating waste on those seats by about 40%. The scan now prints one plainly labelled estimate line, and when the waste is worth more than the paid tool costs, one line about the paid License Auditor. Existing customers keep their old Microsoft price until renewal, so figures are list-price estimates. See CHANGELOG.md on GitHub for earlier changes.'
+            ReleaseNotes = 'Licences on free trials or on disabled, suspended or expired subscriptions are no longer counted as wasted spend: they cost nothing today, so removing them saves nothing. The scan names the subscriptions it left out. See CHANGELOG.md on GitHub for earlier changes.'
         }
     }
 }
